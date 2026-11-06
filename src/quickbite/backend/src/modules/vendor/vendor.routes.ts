@@ -121,25 +121,3 @@ stall.get('/reports', async (req, res) => {
 });
 
 // ─────────── Thực đơn ───────────
-stall.get('/menu-items', async (req, res) => {
-  sendSuccess(res, await vendorMenuService.list(stallId(res), listMenuQuery.parse(req.query)));
-});
-
-stall.post('/menu-items', async (req, res) => {
-  sendSuccess(res, await vendorMenuService.create(stallId(res), createMenuItemSchema.parse(req.body)), 201);
-});
-
-stall.patch('/menu-items/:itemId', async (req, res) => {
-  sendSuccess(res, await vendorMenuService.update(stallId(res), idOf(req.params.itemId, 'Mã món'), updateMenuItemSchema.parse(req.body)));
-});
-
-// Ngừng kinh doanh món (xoá mềm, giữ lịch sử đơn)
-stall.delete('/menu-items/:itemId', async (req, res) => {
-  sendSuccess(res, await vendorMenuService.deactivate(stallId(res), idOf(req.params.itemId, 'Mã món')));
-});
-
-// Tải ảnh món / ảnh quầy (multipart, trường "image")
-stall.post('/uploads', uploadRateLimiter, imageUpload, async (req, res) => {
-  const folder = req.query.type === 'stall' ? 'stalls' : 'menu';
-  sendSuccess(res, { url: await saveImage(req.file, folder) }, 201);
-});
