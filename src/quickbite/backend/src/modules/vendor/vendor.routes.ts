@@ -6,12 +6,9 @@ import { prisma } from '../../lib/prisma.js';
 import { buildPaginationMeta, sendSuccess } from '../../utils/response.js';
 import { TIME_REGEX } from '../../utils/opening-hours.js';
 import { stallOpenState } from '../catalog/catalog.mappers.js';
-import type { OrderActor } from '../orders/order-status.js';
-import { transitionOrder } from '../orders/order-workflow.js';
 import { imageUpload, saveImage } from './upload.js';
 import { uploadRateLimiter } from '../../middlewares/rate-limit.js';
 import { createMenuItemSchema, imageUrlSchema, listMenuQuery, updateMenuItemSchema, vendorMenuService } from './vendor-menu.service.js';
-import { listVendorOrdersQuery, updateOrderStatusSchema, vendorOrdersService } from './vendor-orders.service.js';
 import { reportQuery, vendorReportsService } from './vendor-reports.service.js';
 import { PAYMENT_TIMEOUT_MAX, PAYMENT_TIMEOUT_MIN, hasBankAccount, paymentsService } from '../payments/payments.service.js';
 import { isSupportedBankBin } from '../payments/vietqr-banks.js';
@@ -40,8 +37,6 @@ const stall = Router({ mergeParams: true });
 vendorRouter.use('/stalls/:stallId', requireStallAccess, stall);
 
 const stallId = (res: { locals: Record<string, unknown> }) => res.locals.stallId as number;
-const actorOf = (res: { locals: Record<string, unknown> }): OrderActor =>
-  (res.locals.stallRole as StallAccessRole) === 'ADMIN' ? 'ADMIN' : 'STALL_STAFF';
 const idOf = (raw: unknown, name = 'id') => z.coerce.number().int().positive(`${name} không hợp lệ`).parse(raw);
 
 // Thông tin quầy + nhân viên
@@ -123,37 +118,6 @@ stall.get('/dashboard', async (_req, res) => {
 
 stall.get('/reports', async (req, res) => {
   sendSuccess(res, await vendorReportsService.report(stallId(res), reportQuery.parse(req.query)));
-});
-
-// ─────────── Đơn hàng ───────────
-stall.get('/orders', async (req, res) => {
-  const query = listVendorOrdersQuery.parse(req.query);
-  const { orders, total, tabCounts } = await vendorOrdersService.list(stallId(res), query, actorOf(res));
-  res.json({ success: true, data: orders, meta: { ...buildPaginationMeta(query.page, query.pageSize, total), tabCounts } });
-});
-
-stall.get('/orders/:orderId', async (req, res) => {
-  sendSuccess(res, { order: await vendorOrdersService.detail(stallId(res), idOf(req.params.orderId, 'Mã đơn'), actorOf(res)) });
-});
-
-stall.patch('/orders/:orderId/status', async (req, res) => {
-  const { status, reason } = updateOrderStatusSchema.parse(req.body);
-  const order = await transitionOrder({
-    orderId: idOf(req.params.orderId, 'Mã đơn'),
-    stallId: stallId(res),
-    to: status,
-    actor: actorOf(res),
-    userId: currentUser(req).id,
-    reason,
-  });
-  sendSuccess(res, { order });
-});
-
-// Xác nhận đã nhận chuyển khoản (khi không dùng webhook SePay, quầy tự kiểm tra tài khoản)
-stall.post('/orders/:orderId/confirm-payment', async (req, res) => {
-  const orderId = idOf(req.params.orderId, 'Mã đơn');
-  await paymentsService.confirmManually(stallId(res), orderId, currentUser(req).id);
-  sendSuccess(res, { order: await vendorOrdersService.detail(stallId(res), orderId, actorOf(res)) });
 });
 
 // ─────────── Thực đơn ───────────
