@@ -78,6 +78,82 @@ describe('Phân quyền khu vực chủ quầy', () => {
 });
 
 describe('Quản lý thực đơn', () => {
+  it('tạo món, kiểm tra giá & danh mục', async () => {
+    const { ownerAgent, base, category, hiddenCategory } = await setup();
+    const ok = await ownerAgent.post(`${base}/menu-items`).send({ name: 'Cơm sườn', price: 40000, categoryId: category.id, description: '' });
+    expect(ok.status).toBe(201);
+    expect(ok.body.data).toMatchObject({ name: 'Cơm sườn', price: '40000', description: null, isActive: true, isAvailable: true });
+
+    expect((await ownerAgent.post(`${base}/menu-items`).send({ name: 'Rẻ quá', price: 500, categoryId: category.id })).status).toBe(400);
+    expect((await ownerAgent.post(`${base}/menu-items`).send({ name: 'Giá lẻ', price: 1500.5, categoryId: category.id })).status).toBe(400);
+    expect((await ownerAgent.post(`${base}/menu-items`).send({ name: 'Danh mục ẩn', price: 20000, categoryId: hiddenCategory.id })).status).toBe(400);
+    expect(
+      (await ownerAgent.post(`${base}/menu-items`).send({ name: 'Ảnh lạ', price: 20000, categoryId: category.id, imageUrl: 'javascript:alert(1)' })).status,
+    ).toBe(400);
+  });
+
+  it('cập nhật một phần (bật/tắt còn món) không làm đổi các trường khác', async () => {
+    const { ownerAgent, base, rice } = await setup();
+    const res = await ownerAgent.patch(`${base}/menu-items/${rice.id}`).send({ isAvailable: false });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ isAvailable: false, isFeatured: false, price: '35000', name: 'Cơm gà' });
+  });
+
+  it('ngừng bán món: ẩn khỏi trang công khai, gỡ khỏi giỏ hàng, vẫn giữ trong DB', async () => {
+    const { ownerAgent, studentAgent, base, rice } = await setup();
+    await studentAgent.post(`${API}/cart/items`).send({ menuItemId: rice.id });
+
+    const res = await ownerAgent.delete(`${base}/menu-items/${rice.id}`);
+    expect(res.body.data.isActive).toBe(false);
+    expect((await request(app).get(`${API}/menu-items/${rice.id}`)).status).toBe(404);
+    expect((await studentAgent.get(`${API}/cart`)).body.data.items).toHaveLength(0);
+    expect(await prisma.menuItem.count({ where: { id: rice.id } })).toBe(1);
+
+    expect((await ownerAgent.get(`${base}/menu-items?status=inactive`)).body.data.map((i: { id: number }) => i.id)).toEqual([rice.id]);
+    // Bán lại
+    expect((await ownerAgent.patch(`${base}/menu-items/${rice.id}`).send({ isActive: true })).body.data.isActive).toBe(true);
+  });
+
+  it('không sửa / xoá được món của quầy khác (404)', async () => {
+    const { ownerAgent, base, otherItem } = await setup();
+    expect((await ownerAgent.patch(`${base}/menu-items/${otherItem.id}`).send({ price: 1000 })).status).toBe(404);
+    expect((await ownerAgent.delete(`${base}/menu-items/${otherItem.id}`)).status).toBe(404);
+  });
+});
+
+describe('Tải ảnh', () => {
+  // PNG 1x1 hợp lệ
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  it('ảnh hợp lệ được lưu và truy cập được qua /uploads', async () => {
+    const { ownerAgent, base } = await setup();
+    const res = await ownerAgent.post(`${base}/uploads`).attach('image', png, { filename: 'mon.png', contentType: 'image/png' });
+    expect(res.status).toBe(201);
+    expect(res.body.data.url).toMatch(/^\/uploads\/menu\/[\w-]+\.png$/);
+    expect(existsSync(path.resolve(process.env.UPLOAD_DIR!, res.body.data.url.replace('/uploads/', '')))).toBe(true);
+    expect((await request(app).get(res.body.data.url)).status).toBe(200);
+  });
+
+  it('file giả mạo đuôi ảnh hoặc định dạng không cho phép → 400', async () => {
+    const { ownerAgent, base } = await setup();
+    const fake = await ownerAgent
+      .post(`${base}/uploads`)
+      .attach('image', Buffer.from('<script>alert(1)</script>'), { filename: 'x.png', contentType: 'image/png' });
+    expect(fake.status).toBe(400);
+    const gif = await ownerAgent.post(`${base}/uploads`).attach('image', Buffer.from('GIF89a'), { filename: 'x.gif', contentType: 'image/gif' });
+    expect(gif.status).toBe(400);
+  });
+
+  it('ảnh vượt dung lượng → 400', async () => {
+    const { ownerAgent, base } = await setup();
+    const big = Buffer.concat([png, Buffer.alloc(3 * 1024 * 1024)]);
+    const res = await ownerAgent.post(`${base}/uploads`).attach('image', big, { filename: 'big.png', contentType: 'image/png' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/quá lớn/);
+  });
 });
 
 describe('Tổng quan & báo cáo', () => {
