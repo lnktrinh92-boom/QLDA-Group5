@@ -18,6 +18,8 @@ const LoginPage = page(() => import('@/pages/LoginPage'), 'LoginPage');
 const RegisterPage = page(() => import('@/pages/RegisterPage'), 'RegisterPage');
 const ProfilePage = page(() => import('@/pages/ProfilePage'), 'ProfilePage');
 const VendorLayout = page(() => import('@/components/layout/VendorLayout'), 'VendorLayout');
+const VendorDashboardPage = page(() => import('@/pages/vendor/VendorDashboardPage'), 'VendorDashboardPage');
+const VendorOrdersPage = page(() => import('@/pages/vendor/VendorOrdersPage'), 'VendorOrdersPage');
 const VendorMenuPage = page(() => import('@/pages/vendor/VendorMenuPage'), 'VendorMenuPage');
 const VendorReportsPage = page(() => import('@/pages/vendor/VendorReportsPage'), 'VendorReportsPage');
 const VendorStallSettingsPage = page(() => import('@/pages/vendor/VendorStallSettingsPage'), 'VendorStallSettingsPage');
@@ -60,6 +62,8 @@ export const routes = [
         path: '/quan-ly',
         element: <ProtectedRoute roles={['VENDOR', 'ADMIN']}><VendorLayout /></ProtectedRoute>,
         children: [
+          { index: true, element: <VendorDashboardPage /> },
+          { path: 'don-hang', element: <VendorOrdersPage /> },
           { path: 'thuc-don', element: <VendorMenuPage /> },
           { path: 'bao-cao', element: <VendorReportsPage /> },
           { path: 'thong-tin-quay', element: <VendorStallSettingsPage /> },
