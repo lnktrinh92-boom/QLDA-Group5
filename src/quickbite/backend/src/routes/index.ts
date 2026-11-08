@@ -12,7 +12,6 @@ import { menuItemsRouter } from '../modules/menu-items/menu-items.routes.js';
 import { pickupLocationsRouter } from '../modules/pickup-locations/pickup-locations.routes.js';
 import { cartRouter } from '../modules/cart/cart.routes.js';
 import { ordersRouter } from '../modules/orders/orders.routes.js';
-import { notificationsRouter } from '../modules/notifications/notifications.routes.js';
 import { reviewsRouter } from '../modules/reviews/reviews.routes.js';
 import { paymentsRouter } from '../modules/payments/payments.routes.js';
 
@@ -47,6 +46,5 @@ apiRouter.use('/payments', paymentsRouter);
 
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/users', usersRouter);
-apiRouter.use('/notifications', notificationsRouter);
 apiRouter.use('/vendor', vendorRouter);
 apiRouter.use('/admin', adminRouter);

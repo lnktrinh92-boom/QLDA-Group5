@@ -12,7 +12,6 @@ import { imageUpload, saveImage } from './upload.js';
 import { uploadRateLimiter } from '../../middlewares/rate-limit.js';
 import { createMenuItemSchema, imageUrlSchema, listMenuQuery, updateMenuItemSchema, vendorMenuService } from './vendor-menu.service.js';
 import { listVendorOrdersQuery, updateOrderStatusSchema, vendorOrdersService } from './vendor-orders.service.js';
-import { reportQuery, vendorReportsService } from './vendor-reports.service.js';
 import { PAYMENT_TIMEOUT_MAX, PAYMENT_TIMEOUT_MIN, hasBankAccount, paymentsService } from '../payments/payments.service.js';
 import { isSupportedBankBin } from '../payments/vietqr-banks.js';
 import { normalizeAccountName } from '../payments/vietqr.js';
@@ -115,14 +114,6 @@ stall.patch('/accepting-orders', async (req, res) => {
   const { isAcceptingOrders } = z.object({ isAcceptingOrders: z.boolean() }).parse(req.body);
   const updated = await prisma.foodStall.update({ where: { id: stallId(res) }, data: { isAcceptingOrders } });
   sendSuccess(res, { stall: { ...updated, ...stallOpenState(updated), acceptsVietQr: hasBankAccount(updated) } });
-});
-
-stall.get('/dashboard', async (_req, res) => {
-  sendSuccess(res, await vendorReportsService.dashboard(stallId(res)));
-});
-
-stall.get('/reports', async (req, res) => {
-  sendSuccess(res, await vendorReportsService.report(stallId(res), reportQuery.parse(req.query)));
 });
 
 // ─────────── Đơn hàng ───────────

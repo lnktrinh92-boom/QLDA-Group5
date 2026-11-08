@@ -290,12 +290,6 @@ export const openApiSpec = {
     '/users/me': { patch: op({ tag: 'Xác thực & tài khoản', summary: 'Cập nhật hồ sơ', body: updateProfileSchema }) },
     '/users/me/password': { patch: op({ tag: 'Xác thực & tài khoản', summary: 'Đổi mật khẩu (đăng xuất các thiết bị khác)', body: changePasswordSchema }) },
 
-    // ─────────── Thông báo ───────────
-    '/notifications': { get: op({ tag: 'Thông báo', summary: 'Thông báo của tôi', params: [query('unread', 'Chỉ chưa đọc', { type: 'string', enum: ['true', 'false'] }), ...pageParams], response: paged({ type: 'object' }) }) },
-    '/notifications/unread-count': { get: op({ tag: 'Thông báo', summary: 'Số thông báo chưa đọc' }) },
-    '/notifications/{id}/read': { patch: op({ tag: 'Thông báo', summary: 'Đánh dấu đã đọc', params: [path('id', 'ID thông báo')] }) },
-    '/notifications/read-all': { post: op({ tag: 'Thông báo', summary: 'Đánh dấu tất cả đã đọc' }) },
-
     // ─────────── Giỏ hàng ───────────
     '/cart': {
       get: op({ tag: 'Giỏ hàng', summary: 'Xem giỏ hàng', response: ok(ref('Cart')) }),
@@ -355,8 +349,6 @@ export const openApiSpec = {
     '/vendor/stalls/{stallId}/accepting-orders': {
       patch: op({ tag: 'Chủ quầy', summary: 'Bật / tắt nhận đơn', params: [path('stallId', 'ID quầy')], body: { type: 'object', required: ['isAcceptingOrders'], properties: { isAcceptingOrders: { type: 'boolean' } } } }),
     },
-    '/vendor/stalls/{stallId}/dashboard': { get: op({ tag: 'Chủ quầy', summary: 'Số liệu hôm nay & hàng đợi đơn', params: [path('stallId', 'ID quầy')] }) },
-    '/vendor/stalls/{stallId}/reports': { get: op({ tag: 'Chủ quầy', summary: 'Báo cáo doanh thu theo ngày', params: [path('stallId', 'ID quầy'), ...dateParams] }) },
     '/vendor/stalls/{stallId}/orders': {
       get: op({
         tag: 'Chủ quầy',
