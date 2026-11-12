@@ -128,6 +128,62 @@ describe('Quản lý người dùng', () => {
     await expect(loginAs('sv@test.local', 'MatKhauMoi9')).resolves.toBeDefined();
     await expect(loginAs('sv@test.local')).rejects.toThrow();
   });
+
+  it('danh sách: tìm theo q (tên / email / mã SV), lọc vai trò + trạng thái, phân trang đúng tổng số và số trang', async () => {
+    const { adminAgent, student, student2 } = await setup();
+    await prisma.user.update({ where: { id: student.id }, data: { fullName: 'Nguyễn Văn An', studentCode: 'SV2024001' } });
+    await prisma.user.update({ where: { id: student2.id }, data: { fullName: 'Trần Thị Bình', status: 'SUSPENDED' } });
+    for (let i = 1; i <= 5; i++) await createUser({ role: 'STUDENT', email: `them${i}@test.local` });
+    const list = (qs: string) => adminAgent.get(`${API}/admin/users?${qs}`);
+    const emails = async (qs: string) => (await list(qs)).body.data.map((u: { email: string }) => u.email);
+
+    // Tìm không dấu, không phân biệt hoa thường; theo tên, email, mã SV; "search" (tên cũ) vẫn dùng được
+    expect(await emails('q=nguyen van an')).toEqual(['sv@test.local']);
+    expect(await emails('q=SV2@TEST')).toEqual(['sv2@test.local']);
+    expect(await emails('q=sv2024001')).toEqual(['sv@test.local']);
+    expect(await emails('search=tran thi binh')).toEqual(['sv2@test.local']);
+
+    // Lọc vai trò, trạng thái và kết hợp với từ khoá
+    expect((await list('role=STUDENT')).body.meta.total).toBe(7);
+    expect(await emails('status=SUSPENDED')).toEqual(['sv2@test.local']);
+    expect((await list('role=STUDENT&status=ACTIVE')).body.meta.total).toBe(6);
+    expect(await emails('q=test.local&role=VENDOR')).toEqual(['vendor@test.local']);
+
+    // Phân trang: 9 tài khoản, 4 / trang → 3 trang, không trùng, không sót
+    const ids: number[] = [];
+    for (let page = 1; page <= 3; page++) {
+      const res = await list(`pageSize=4&page=${page}`);
+      expect(res.body.meta).toEqual({ page, pageSize: 4, total: 9, totalPages: 3 });
+      ids.push(...res.body.data.map((u: { id: number }) => u.id));
+    }
+    expect(ids).toHaveLength(9);
+    expect(new Set(ids).size).toBe(9);
+    expect((await list('pageSize=4&page=4')).body.data).toEqual([]);
+
+    // Tham số sai → 400, thông báo tiếng Việt
+    const long = await list(`q=${'a'.repeat(101)}`);
+    expect(long.status).toBe(400);
+    expect(long.body.error.details).toEqual([{ field: 'q', message: 'Từ khoá tối đa 100 ký tự' }]);
+    expect((await list('pageSize=0')).status).toBe(400);
+    expect((await list('status=DELETED')).status).toBe(400);
+  });
+
+  it('khoá rồi mở khoá: đăng nhập lại được; đổi vai trò; người không phải admin sửa người dùng → 403', async () => {
+    const { adminAgent, studentAgent, student2 } = await setup();
+    const vendorAgent = await loginAs('vendor@test.local');
+    expect((await studentAgent.patch(`${API}/admin/users/${student2.id}`).send({ status: 'SUSPENDED' })).status).toBe(403);
+    expect((await vendorAgent.patch(`${API}/admin/users/${student2.id}`).send({ role: 'ADMIN' })).status).toBe(403);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: student2.id } })).toMatchObject({ status: 'ACTIVE', role: 'STUDENT' });
+
+    expect((await adminAgent.patch(`${API}/admin/users/${student2.id}`).send({ status: 'SUSPENDED' })).body.data.user.status).toBe('SUSPENDED');
+    await expect(loginAs('sv2@test.local')).rejects.toThrow();
+    expect((await adminAgent.patch(`${API}/admin/users/${student2.id}`).send({ status: 'ACTIVE' })).body.data.user.status).toBe('ACTIVE');
+    await expect(loginAs('sv2@test.local')).resolves.toBeDefined();
+
+    expect((await adminAgent.patch(`${API}/admin/users/${student2.id}`).send({ role: 'VENDOR' })).body.data.user.role).toBe('VENDOR');
+    expect(await auditCount('USER_STATUS_CHANGE')).toBe(2);
+    expect(await auditCount('USER_ROLE_CHANGE')).toBe(1);
+  });
 });
 
 describe('Quầy ăn & nhân viên', () => {

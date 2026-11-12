@@ -395,7 +395,7 @@ export const openApiSpec = {
     // ─────────── Quản trị ───────────
     '/admin/dashboard': { get: op({ tag: 'Quản trị', summary: 'Tổng quan toàn hệ thống' }) },
     '/admin/users': {
-      get: op({ tag: 'Quản trị', summary: 'Danh sách người dùng', params: [query('search', 'Tên, email, mã SV'), query('role', 'Vai trò', { type: 'string', enum: ['STUDENT', 'VENDOR', 'ADMIN'] }), query('status', 'Trạng thái', { type: 'string', enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED'] }), ...pageParams], response: paged(ref('User')) }),
+      get: op({ tag: 'Quản trị', summary: 'Danh sách người dùng', params: [query('q', 'Từ khoá: tên, email, mã SV (không phân biệt hoa thường, dấu)'), query('search', 'Tên cũ của q (giữ để tương thích)'), query('role', 'Vai trò', { type: 'string', enum: ['STUDENT', 'VENDOR', 'ADMIN'] }), query('status', 'Trạng thái', { type: 'string', enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED'] }), ...pageParams], response: paged(ref('User')) }),
       post: op({ tag: 'Quản trị', summary: 'Tạo tài khoản', body: createUserSchema, status: 201, errors: { 409: err('Email đã được dùng') } }),
     },
     '/admin/users/{id}': {
