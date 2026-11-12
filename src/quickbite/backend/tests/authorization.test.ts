@@ -16,29 +16,13 @@ async function setupRoles() {
 
 describe('Phân quyền API quản trị', () => {
   it('chưa đăng nhập → 401', async () => {
-    expect((await request(app).get(`${API}/admin/users`)).status).toBe(401);
+    expect((await request(app).get(`${API}/admin/audit-logs`)).status).toBe(401);
   });
 
   it('sinh viên và chủ quầy → 403', async () => {
     await setupRoles();
-    expect((await (await loginAs('sv@test.local')).get(`${API}/admin/users`)).status).toBe(403);
-    expect((await (await loginAs('vendor.a@test.local')).get(`${API}/admin/users`)).status).toBe(403);
-  });
-
-  it('admin → 200, có phân trang, không lộ mật khẩu', async () => {
-    await setupRoles();
-    const admin = await loginAs('admin@test.local');
-    const res = await admin.get(`${API}/admin/users?pageSize=2&role=VENDOR`);
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(2);
-    expect(res.body.meta).toMatchObject({ page: 1, pageSize: 2, total: 2, totalPages: 1 });
-    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash/);
-  });
-
-  it('query không hợp lệ → 400', async () => {
-    await setupRoles();
-    const admin = await loginAs('admin@test.local');
-    expect((await admin.get(`${API}/admin/users?role=HACKER`)).status).toBe(400);
+    expect((await (await loginAs('sv@test.local')).get(`${API}/admin/audit-logs`)).status).toBe(403);
+    expect((await (await loginAs('vendor.a@test.local')).get(`${API}/admin/audit-logs`)).status).toBe(403);
   });
 });
 

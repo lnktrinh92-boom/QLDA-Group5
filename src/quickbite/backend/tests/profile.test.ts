@@ -47,7 +47,7 @@ describe('Hồ sơ cá nhân — PATCH /users/me', () => {
     const db = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(db).toMatchObject({ email: 'sv@test.local', role: 'STUDENT', fullName: 'Tên Hợp Lệ' });
     expect(db.passwordHash).not.toBe('x');
-    expect((await agent.get(`${API}/admin/users`)).status).toBe(403);
+    expect((await agent.get(`${API}/admin/audit-logs`)).status).toBe(403);
   });
 
   it('dữ liệu sai → 400, báo lỗi đúng từng trường bằng tiếng Việt', async () => {

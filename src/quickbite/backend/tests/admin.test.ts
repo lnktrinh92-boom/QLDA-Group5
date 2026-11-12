@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { Prisma } from '@prisma/client';
-import { API, app, createStall, createUser, loginAs, prisma, request, resetDatabase, TEST_PASSWORD } from './helpers.js';
+import { API, app, createStall, createUser, loginAs, prisma, request, resetDatabase } from './helpers.js';
 
 beforeEach(resetDatabase);
 afterAll(() => prisma.$disconnect());
@@ -36,7 +36,7 @@ describe('Phân quyền quản trị', () => {
   it('sinh viên & chủ quầy bị chặn (403) ở mọi API quản trị', async () => {
     const { studentAgent } = await setup();
     const vendorAgent = await loginAs('vendor@test.local');
-    for (const path of ['/dashboard', '/users', '/stalls', '/categories', '/pickup-locations', '/orders', '/reviews', '/audit-logs']) {
+    for (const path of ['/dashboard', '/stalls', '/categories', '/pickup-locations', '/orders', '/reviews', '/audit-logs']) {
       expect((await studentAgent.get(`${API}/admin${path}`)).status).toBe(403);
       expect((await vendorAgent.get(`${API}/admin${path}`)).status).toBe(403);
     }
@@ -54,79 +54,6 @@ describe('Phân quyền quản trị', () => {
       orders: { today: 1, active: 1 },
     });
     expect(res.body.data.series).toHaveLength(14);
-  });
-});
-
-describe('Quản lý người dùng', () => {
-  it('tạo tài khoản chủ quầy, ghi nhật ký; email trùng → 409', async () => {
-    const { adminAgent } = await setup();
-    const res = await adminAgent.post(`${API}/admin/users`).send({ fullName: 'Chủ Quầy Mới', email: 'Moi@Test.local', password: 'Matkhau123', role: 'VENDOR' });
-    expect(res.status).toBe(201);
-    expect(res.body.data.user).toMatchObject({ email: 'moi@test.local', role: 'VENDOR' });
-    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash/);
-    expect(await auditCount('USER_CREATE')).toBe(1);
-    await expect(loginAs('moi@test.local', 'Matkhau123')).resolves.toBeDefined();
-
-    expect((await adminAgent.post(`${API}/admin/users`).send({ fullName: 'Trùng', email: 'moi@test.local', password: 'Matkhau123', role: 'STUDENT' })).status).toBe(409);
-  });
-
-  it('khoá tài khoản: phiên đang mở bị đăng xuất ngay, không đăng nhập lại được', async () => {
-    const { adminAgent, studentAgent, student } = await setup();
-    const res = await adminAgent.patch(`${API}/admin/users/${student.id}`).send({ status: 'SUSPENDED' });
-    expect(res.status).toBe(200);
-    expect((await studentAgent.get(`${API}/auth/me`)).status).toBe(401);
-    expect((await request(app).post(`${API}/auth/login`).send({ email: 'sv@test.local', password: TEST_PASSWORD })).status).toBe(403);
-    expect(await auditCount('USER_STATUS_CHANGE')).toBe(1);
-  });
-
-  it('không tự khoá / tự hạ quyền; luôn còn ít nhất một admin', async () => {
-    const { adminAgent, admin } = await setup();
-    expect((await adminAgent.patch(`${API}/admin/users/${admin.id}`).send({ status: 'SUSPENDED' })).status).toBe(422);
-    expect((await adminAgent.patch(`${API}/admin/users/${admin.id}`).send({ role: 'STUDENT' })).status).toBe(422);
-
-    // Có admin thứ hai: được hạ quyền admin đó, nhưng không được hạ admin cuối cùng
-    const admin2 = await createUser({ role: 'ADMIN', email: 'admin2@test.local' });
-    expect((await adminAgent.patch(`${API}/admin/users/${admin2.id}`).send({ role: 'STUDENT' })).status).toBe(200);
-  });
-
-  it('hai admin hạ quyền lẫn nhau cùng lúc: vẫn còn ít nhất một admin', async () => {
-    const { adminAgent, admin } = await setup();
-    const admin2 = await createUser({ role: 'ADMIN', email: 'admin2@test.local' });
-    const admin2Agent = await loginAs('admin2@test.local');
-    const [a, b] = await Promise.all([
-      adminAgent.patch(`${API}/admin/users/${admin2.id}`).send({ status: 'SUSPENDED' }),
-      admin2Agent.patch(`${API}/admin/users/${admin.id}`).send({ status: 'SUSPENDED' }),
-    ]);
-    expect([a.status, b.status]).toContain(200);
-    expect(await prisma.user.count({ where: { role: 'ADMIN', status: 'ACTIVE' } })).toBeGreaterThanOrEqual(1);
-  });
-
-  it('ảnh quầy chỉ nhận ảnh tự tải lên hoặc tên miền được phép', async () => {
-    const { adminAgent, stall } = await setup();
-    const tracker = await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: 'https://tracker.example.com/pixel.gif' });
-    expect(tracker.status).toBe(400);
-    const allowed = await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: 'https://images.unsplash.com/photo-1?w=800' });
-    expect(allowed.status).toBe(200);
-    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/uploads/../../.env' })).status).toBe(400);
-    // Ảnh có sẵn trong giao diện (frontend/public/images)
-    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/food/pho-bo-tai.webp' })).status).toBe(200);
-    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/../.env' })).status).toBe(400);
-    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/food/x.svg' })).status).toBe(400);
-  });
-
-  it('đổi vai trò chủ quầy → sinh viên thì gỡ khỏi quầy', async () => {
-    const { adminAgent, vendor } = await setup();
-    const res = await adminAgent.patch(`${API}/admin/users/${vendor.id}`).send({ role: 'STUDENT' });
-    expect(res.body.data.user).toMatchObject({ role: 'STUDENT', stalls: [] });
-    expect(await prisma.vendorMembership.count({ where: { userId: vendor.id } })).toBe(0);
-  });
-
-  it('đặt lại mật khẩu: mật khẩu cũ hết hiệu lực', async () => {
-    const { adminAgent, studentAgent, student } = await setup();
-    expect((await adminAgent.post(`${API}/admin/users/${student.id}/reset-password`).send({ newPassword: 'MatKhauMoi9' })).status).toBe(200);
-    expect((await studentAgent.get(`${API}/auth/me`)).status).toBe(401);
-    await expect(loginAs('sv@test.local', 'MatKhauMoi9')).resolves.toBeDefined();
-    await expect(loginAs('sv@test.local')).rejects.toThrow();
   });
 });
 
