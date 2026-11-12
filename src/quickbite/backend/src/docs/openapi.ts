@@ -13,6 +13,7 @@ import { createReviewSchema } from '../modules/reviews/reviews.routes.js';
 import { createMenuItemSchema, updateMenuItemSchema } from '../modules/vendor/vendor-menu.service.js';
 import { updateOrderStatusSchema } from '../modules/vendor/vendor-orders.service.js';
 import { vendorUpdateStallSchema } from '../modules/vendor/vendor.routes.js';
+import { createUserSchema, updateUserSchema } from '../modules/admin/admin-users.routes.js';
 import { createStallSchema, stallMemberSchema, updateStallSchema } from '../modules/admin/admin-stalls.routes.js';
 import { categorySchema, pickupSchema } from '../modules/admin/admin-catalog.routes.js';
 
@@ -393,6 +394,17 @@ export const openApiSpec = {
 
     // ─────────── Quản trị ───────────
     '/admin/dashboard': { get: op({ tag: 'Quản trị', summary: 'Tổng quan toàn hệ thống' }) },
+    '/admin/users': {
+      get: op({ tag: 'Quản trị', summary: 'Danh sách người dùng', params: [query('q', 'Từ khoá: tên, email, mã SV (không phân biệt hoa thường, dấu)'), query('search', 'Tên cũ của q (giữ để tương thích)'), query('role', 'Vai trò', { type: 'string', enum: ['STUDENT', 'VENDOR', 'ADMIN'] }), query('status', 'Trạng thái', { type: 'string', enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED'] }), ...pageParams], response: paged(ref('User')) }),
+      post: op({ tag: 'Quản trị', summary: 'Tạo tài khoản', body: createUserSchema, status: 201, errors: { 409: err('Email đã được dùng') } }),
+    },
+    '/admin/users/{id}': {
+      get: op({ tag: 'Quản trị', summary: 'Chi tiết người dùng', params: [path('id', 'ID người dùng')] }),
+      patch: op({ tag: 'Quản trị', summary: 'Sửa người dùng (vai trò, trạng thái...)', description: 'Không tự khoá / tự hạ quyền; hệ thống luôn còn ≥ 1 admin. Đổi vai trò/trạng thái → đăng xuất người dùng.', params: [path('id', 'ID người dùng')], body: updateUserSchema, errors: { 422: err('Vi phạm quy tắc admin') } }),
+    },
+    '/admin/users/{id}/reset-password': {
+      post: op({ tag: 'Quản trị', summary: 'Đặt lại mật khẩu', params: [path('id', 'ID người dùng')], body: { type: 'object', required: ['newPassword'], properties: { newPassword: { type: 'string', minLength: 8, maxLength: 72 } } } }),
+    },
     '/admin/stalls': {
       get: op({ tag: 'Quản trị', summary: 'Danh sách quầy (kể cả đã tắt)', params: [query('q', 'Tên / vị trí')] }),
       post: op({ tag: 'Quản trị', summary: 'Tạo quầy (slug tự sinh nếu bỏ trống)', body: createStallSchema, status: 201 }),

@@ -15,10 +15,10 @@ describe('Middleware phân quyền: vai trò đọc từ DB ở MỖI request', 
   it('admin bị hạ xuống sinh viên → mất quyền quản trị ngay, không cần đăng nhập lại', async () => {
     const admin = await createUser({ role: 'ADMIN', email: 'admin@test.local' });
     const agent = await loginAs('admin@test.local');
-    expect((await agent.get(`${API}/admin/audit-logs`)).status).toBe(200);
+    expect((await agent.get(`${API}/admin/users`)).status).toBe(200);
 
     await prisma.user.update({ where: { id: admin.id }, data: { role: 'STUDENT' } });
-    expect((await agent.get(`${API}/admin/audit-logs`)).status).toBe(403);
+    expect((await agent.get(`${API}/admin/users`)).status).toBe(403);
   });
 
   it('nhân viên (STAFF) bị gỡ khỏi quầy → không vào được quầy đó nữa (404)', async () => {
@@ -67,7 +67,7 @@ describe('JWT không hợp lệ', () => {
     const wrongKey = jwt.sign({ role: 'ADMIN', tv: 0 }, 'khoa-gia-mao-khoa-gia-mao-khoa-gia-mao', { subject: String(user.id), issuer: 'quickbite-api' });
     const none = jwt.sign({ role: 'ADMIN', tv: 0 }, '', { subject: String(user.id), issuer: 'quickbite-api', algorithm: 'none' });
     for (const token of [wrongKey, none]) {
-      expect((await request(app).get(`${API}/admin/audit-logs`).set('Cookie', cookieOf(token))).status).toBe(401);
+      expect((await request(app).get(`${API}/admin/users`).set('Cookie', cookieOf(token))).status).toBe(401);
     }
   });
 });
