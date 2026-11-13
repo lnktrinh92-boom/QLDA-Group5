@@ -52,12 +52,32 @@ export function createApp() {
   // Tài liệu API (Swagger UI) — mặc định chỉ bật khi phát triển
   if (apiDocsEnabled) {
     app.get('/api/v1/openapi.json', (_req, res) => res.json(openApiSpec));
+    // Trên Vercel (serverless) các file tĩnh của swagger-ui-dist không được đóng gói kèm,
+    // nên tải CSS/JS giao diện Swagger từ CDN (đúng phiên bản đang cài) và nới CSP cho riêng /api/docs
+    const onVercel = Boolean(process.env.VERCEL);
+    const SWAGGER_CDN = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.3';
+    if (onVercel) {
+      app.use(
+        '/api/docs',
+        helmet.contentSecurityPolicy({
+          directives: {
+            scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+            styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+            imgSrc: ["'self'", 'data:', 'https://cdn.jsdelivr.net'],
+          },
+        }),
+      );
+    }
     app.use(
       '/api/docs',
       swaggerUi.serve,
       swaggerUi.setup(openApiSpec, {
         customSiteTitle: 'QuickBite API — Tài liệu',
         swaggerOptions: { persistAuthorization: true, withCredentials: true, docExpansion: 'none', tagsSorter: 'alpha' },
+        ...(onVercel && {
+          customCssUrl: `${SWAGGER_CDN}/swagger-ui.css`,
+          customJs: [`${SWAGGER_CDN}/swagger-ui-bundle.js`, `${SWAGGER_CDN}/swagger-ui-standalone-preset.js`],
+        }),
       }),
     );
   }
