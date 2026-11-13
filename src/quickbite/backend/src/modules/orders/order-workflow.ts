@@ -22,6 +22,8 @@ interface TransitionInput {
   actor: OrderActor;
   userId: number;
   reason?: string;
+  /** Chạy trong cùng transaction sau khi đổi trạng thái (vd: ghi nhật ký quản trị) */
+  onTransition?: (tx: Prisma.TransactionClient, change: { from: OrderStatus; to: OrderStatus; reason: string | null }) => Promise<unknown>;
 }
 
 /**
@@ -30,7 +32,7 @@ interface TransitionInput {
  * - Cập nhật có điều kiện (WHERE status = trạng thái cũ) để hai người bấm cùng lúc không làm hỏng đơn
  * - Ghi mốc thời gian, cập nhật thanh toán, số lượng đã bán, lịch sử và thông báo cho sinh viên
  */
-export async function transitionOrder({ orderId, stallId, to, actor, userId, reason }: TransitionInput) {
+export async function transitionOrder({ orderId, stallId, to, actor, userId, reason, onTransition }: TransitionInput) {
   const order = await prisma.order.findFirst({
     where: { id: orderId, ...(stallId !== undefined && { stallId }) },
     include: { stall: { select: { name: true } }, items: { select: { menuItemId: true, quantity: true } } },
@@ -107,6 +109,8 @@ export async function transitionOrder({ orderId, stallId, to, actor, userId, rea
         },
       });
     }
+
+    if (onTransition) await onTransition(tx, { from: order.status, to, reason: trimmedReason ?? null });
   });
 
   const updated = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: orderDetailInclude });
