@@ -71,6 +71,8 @@ export interface StallInput {
   closeTime: string;
   imageUrl?: string | null;
   isActive: boolean;
+  /** Chỉ khi tạo quầy: gán chủ quầy ngay */
+  ownerEmail?: string;
 }
 
 export interface AdminCategory {
