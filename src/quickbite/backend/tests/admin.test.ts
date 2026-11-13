@@ -114,11 +114,50 @@ describe('Quản lý người dùng', () => {
     expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/food/x.svg' })).status).toBe(400);
   });
 
-  it('đổi vai trò chủ quầy → sinh viên thì gỡ khỏi quầy', async () => {
-    const { adminAgent, vendor } = await setup();
-    const res = await adminAgent.patch(`${API}/admin/users/${vendor.id}`).send({ role: 'STUDENT' });
+  it('đổi vai trò: chủ quầy phải chuyển quyền trước (quầy không bị mất chủ); nhân viên → sinh viên thì gỡ khỏi quầy', async () => {
+    const { adminAgent, vendor, stall } = await setup();
+    const staff = await createUser({ role: 'VENDOR', email: 'nv.quay@test.local' });
+    await prisma.vendorMembership.create({ data: { userId: staff.id, stallId: stall.id, role: 'STAFF' } });
+
+    // Chủ quầy duy nhất → bị chặn, quầy vẫn còn chủ, vai trò không đổi
+    const blocked = await adminAgent.patch(`${API}/admin/users/${vendor.id}`).send({ role: 'STUDENT' });
+    expect(blocked.status).toBe(422);
+    expect(blocked.body.error.message).toContain('đang là chủ quầy "Quầy A"');
+    expect(blocked.body.error.details).toEqual([{ field: 'role', message: expect.stringContaining('cần chuyển quyền trước') }]);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: vendor.id } })).toMatchObject({ role: 'VENDOR' });
+    expect(await prisma.vendorMembership.findFirst({ where: { stallId: stall.id, role: 'OWNER' } })).toMatchObject({ userId: vendor.id });
+    expect(await auditCount('USER_ROLE_CHANGE')).toBe(0);
+
+    // Nhân viên → sinh viên: gỡ khỏi quầy như cũ
+    const res = await adminAgent.patch(`${API}/admin/users/${staff.id}`).send({ role: 'STUDENT' });
     expect(res.body.data.user).toMatchObject({ role: 'STUDENT', stalls: [] });
-    expect(await prisma.vendorMembership.count({ where: { userId: vendor.id } })).toBe(0);
+    expect(await prisma.vendorMembership.count({ where: { userId: staff.id } })).toBe(0);
+
+    // Chuyển quyền chủ quầy cho người khác xong thì chủ cũ đổi vai trò được
+    const next = await createUser({ role: 'VENDOR', email: 'chu.moi2@test.local' });
+    await prisma.vendorMembership.create({ data: { userId: next.id, stallId: stall.id, role: 'STAFF' } });
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}/members/${next.id}`).send({ role: 'OWNER' })).status).toBe(200);
+    const ok = await adminAgent.patch(`${API}/admin/users/${vendor.id}`).send({ role: 'STUDENT' });
+    expect(ok.status).toBe(200);
+    expect(await prisma.vendorMembership.findMany({ where: { stallId: stall.id }, select: { userId: true, role: true } })).toEqual([{ userId: next.id, role: 'OWNER' }]);
+  });
+
+  it('câu báo lỗi kiểm tra dữ liệu mặc định bằng tiếng Việt (phân trang, vai trò, trạng thái đơn)', async () => {
+    const { adminAgent, stall, admin } = await setup();
+    const detail = async (path: string, body?: object) => {
+      const res = body ? await adminAgent.patch(`${API}${path}`).send(body) : await adminAgent.get(`${API}${path}`);
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toBe('Dữ liệu gửi lên không hợp lệ');
+      return res.body.error.details.map((d: { message: string }) => d.message).join(' | ');
+    };
+    expect(await detail('/admin/users?pageSize=500')).toBe('Giá trị tối đa là 100');
+    expect(await detail('/admin/users?page=0')).toBe('Giá trị tối thiểu là 1');
+    expect(await detail('/admin/users?role=ABC')).toBe('Giá trị không hợp lệ. Chỉ chấp nhận: STUDENT, VENDOR, ADMIN');
+    expect(await detail('/admin/orders?status=XYZ')).toContain('Giá trị không hợp lệ. Chỉ chấp nhận: PENDING, ACCEPTED');
+    expect(await detail(`/vendor/stalls/${stall.id}/orders?page=abc`)).toBe('Phải là số');
+    expect(await detail(`/admin/users/${admin.id}`, { role: 'BOSS' })).toBe('Giá trị không hợp lệ. Chỉ chấp nhận: STUDENT, VENDOR, ADMIN');
+    // Câu báo lỗi riêng của schema vẫn được ưu tiên
+    expect(await detail('/admin/users?q=' + 'x'.repeat(101))).toBe('Từ khoá tối đa 100 ký tự');
   });
 
   it('đặt lại mật khẩu: mật khẩu cũ hết hiệu lực', async () => {
@@ -127,6 +166,62 @@ describe('Quản lý người dùng', () => {
     expect((await studentAgent.get(`${API}/auth/me`)).status).toBe(401);
     await expect(loginAs('sv@test.local', 'MatKhauMoi9')).resolves.toBeDefined();
     await expect(loginAs('sv@test.local')).rejects.toThrow();
+  });
+
+  it('danh sách: tìm theo q (tên / email / mã SV), lọc vai trò + trạng thái, phân trang đúng tổng số và số trang', async () => {
+    const { adminAgent, student, student2 } = await setup();
+    await prisma.user.update({ where: { id: student.id }, data: { fullName: 'Nguyễn Văn An', studentCode: 'SV2024001' } });
+    await prisma.user.update({ where: { id: student2.id }, data: { fullName: 'Trần Thị Bình', status: 'SUSPENDED' } });
+    for (let i = 1; i <= 5; i++) await createUser({ role: 'STUDENT', email: `them${i}@test.local` });
+    const list = (qs: string) => adminAgent.get(`${API}/admin/users?${qs}`);
+    const emails = async (qs: string) => (await list(qs)).body.data.map((u: { email: string }) => u.email);
+
+    // Tìm không dấu, không phân biệt hoa thường; theo tên, email, mã SV; "search" (tên cũ) vẫn dùng được
+    expect(await emails('q=nguyen van an')).toEqual(['sv@test.local']);
+    expect(await emails('q=SV2@TEST')).toEqual(['sv2@test.local']);
+    expect(await emails('q=sv2024001')).toEqual(['sv@test.local']);
+    expect(await emails('search=tran thi binh')).toEqual(['sv2@test.local']);
+
+    // Lọc vai trò, trạng thái và kết hợp với từ khoá
+    expect((await list('role=STUDENT')).body.meta.total).toBe(7);
+    expect(await emails('status=SUSPENDED')).toEqual(['sv2@test.local']);
+    expect((await list('role=STUDENT&status=ACTIVE')).body.meta.total).toBe(6);
+    expect(await emails('q=test.local&role=VENDOR')).toEqual(['vendor@test.local']);
+
+    // Phân trang: 9 tài khoản, 4 / trang → 3 trang, không trùng, không sót
+    const ids: number[] = [];
+    for (let page = 1; page <= 3; page++) {
+      const res = await list(`pageSize=4&page=${page}`);
+      expect(res.body.meta).toEqual({ page, pageSize: 4, total: 9, totalPages: 3 });
+      ids.push(...res.body.data.map((u: { id: number }) => u.id));
+    }
+    expect(ids).toHaveLength(9);
+    expect(new Set(ids).size).toBe(9);
+    expect((await list('pageSize=4&page=4')).body.data).toEqual([]);
+
+    // Tham số sai → 400, thông báo tiếng Việt
+    const long = await list(`q=${'a'.repeat(101)}`);
+    expect(long.status).toBe(400);
+    expect(long.body.error.details).toEqual([{ field: 'q', message: 'Từ khoá tối đa 100 ký tự' }]);
+    expect((await list('pageSize=0')).status).toBe(400);
+    expect((await list('status=DELETED')).status).toBe(400);
+  });
+
+  it('khoá rồi mở khoá: đăng nhập lại được; đổi vai trò; người không phải admin sửa người dùng → 403', async () => {
+    const { adminAgent, studentAgent, student2 } = await setup();
+    const vendorAgent = await loginAs('vendor@test.local');
+    expect((await studentAgent.patch(`${API}/admin/users/${student2.id}`).send({ status: 'SUSPENDED' })).status).toBe(403);
+    expect((await vendorAgent.patch(`${API}/admin/users/${student2.id}`).send({ role: 'ADMIN' })).status).toBe(403);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: student2.id } })).toMatchObject({ status: 'ACTIVE', role: 'STUDENT' });
+
+    expect((await adminAgent.patch(`${API}/admin/users/${student2.id}`).send({ status: 'SUSPENDED' })).body.data.user.status).toBe('SUSPENDED');
+    await expect(loginAs('sv2@test.local')).rejects.toThrow();
+    expect((await adminAgent.patch(`${API}/admin/users/${student2.id}`).send({ status: 'ACTIVE' })).body.data.user.status).toBe('ACTIVE');
+    await expect(loginAs('sv2@test.local')).resolves.toBeDefined();
+
+    expect((await adminAgent.patch(`${API}/admin/users/${student2.id}`).send({ role: 'VENDOR' })).body.data.user.role).toBe('VENDOR');
+    expect(await auditCount('USER_STATUS_CHANGE')).toBe(2);
+    expect(await auditCount('USER_ROLE_CHANGE')).toBe(1);
   });
 });
 
@@ -167,6 +262,47 @@ describe('Quầy ăn & nhân viên', () => {
     expect(await auditCount('STALL_MEMBER_ADD')).toBe(1);
     expect(await auditCount('STALL_MEMBER_REMOVE')).toBe(1);
   });
+
+  it('mỗi quầy đúng 1 chủ quầy: tạo kèm chủ quầy, không thêm chủ quầy thứ 2, chuyển quyền, không gỡ / hạ chủ quầy duy nhất', async () => {
+    const { adminAgent, stall, vendor } = await setup();
+    const staff = await createUser({ role: 'VENDOR', email: 'nv2@test.local' });
+    await createUser({ role: 'VENDOR', email: 'chu.moi@test.local' });
+    const owners = (stallId: number) => prisma.vendorMembership.findMany({ where: { stallId, role: 'OWNER' }, select: { userId: true } });
+
+    // Tạo quầy kèm chủ quầy; người chưa có vai trò Chủ quầy → 422, quầy không được tạo
+    const created = await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Quầy Mới', location: 'Tòa B', ownerEmail: 'Chu.Moi@test.local' });
+    expect(created.status).toBe(201);
+    expect(created.body.data.stall.memberships).toMatchObject([{ role: 'OWNER', user: { email: 'chu.moi@test.local' } }]);
+    expect((await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Quầy Lỗi', location: 'Tòa B', ownerEmail: 'sv@test.local' })).status).toBe(422);
+    expect(await prisma.foodStall.count({ where: { name: 'Quầy Lỗi' } })).toBe(0);
+
+    // Quầy A đã có chủ quầy → không thêm chủ quầy thứ 2, thêm làm nhân viên thì được
+    const second = await adminAgent.post(`${API}/admin/stalls/${stall.id}/members`).send({ email: 'nv2@test.local', role: 'OWNER' });
+    expect(second.status).toBe(409);
+    expect(second.body.error.message).toMatch(/Mỗi quầy chỉ có 1 chủ quầy/);
+    expect((await adminAgent.post(`${API}/admin/stalls/${stall.id}/members`).send({ email: 'nv2@test.local', role: 'STAFF' })).status).toBe(201);
+
+    // Không hạ / gỡ chủ quầy duy nhất
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}/members/${vendor.id}`).send({ role: 'STAFF' })).status).toBe(422);
+    expect((await adminAgent.delete(`${API}/admin/stalls/${stall.id}/members/${vendor.id}`)).status).toBe(422);
+    expect(await owners(stall.id)).toEqual([{ userId: vendor.id }]);
+
+    // Chuyển quyền: nhân viên lên chủ quầy, chủ quầy cũ thành nhân viên → gỡ được
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}/members/${staff.id}`).send({ role: 'OWNER' })).status).toBe(200);
+    expect(await owners(stall.id)).toEqual([{ userId: staff.id }]);
+    expect(await prisma.vendorMembership.findFirstOrThrow({ where: { stallId: stall.id, userId: vendor.id } })).toMatchObject({ role: 'STAFF' });
+    expect((await adminAgent.delete(`${API}/admin/stalls/${stall.id}/members/${vendor.id}`)).status).toBe(200);
+    expect(await owners(stall.id)).toEqual([{ userId: staff.id }]);
+
+    // Quầy chưa có chủ quầy, hai admin gán chủ quầy cùng lúc → chỉ một người thành công
+    const empty = (await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Quầy Trống', location: 'Tòa C' })).body.data.stall;
+    const [a, b] = await Promise.all([
+      adminAgent.post(`${API}/admin/stalls/${empty.id}/members`).send({ email: 'nv2@test.local', role: 'OWNER' }),
+      adminAgent.post(`${API}/admin/stalls/${empty.id}/members`).send({ email: 'vendor@test.local', role: 'OWNER' }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await owners(empty.id)).toHaveLength(1);
+  });
 });
 
 describe('Danh mục & điểm nhận', () => {
@@ -194,6 +330,49 @@ describe('Danh mục & điểm nhận', () => {
     await studentAgent.post(`${API}/cart/items`).send({ menuItemId: rice.id });
     expect((await studentAgent.post(`${API}/orders`).send({ pickupLocationId: pickup.id, idempotencyKey: `pk-${Date.now()}` })).status).toBe(422);
   });
+
+  it('điểm nhận: chỉ xoá cứng khi chưa có đơn; đã có đơn → 422, tắt thay vì xoá', async () => {
+    const { adminAgent, placeOrder, pickup } = await setup();
+    const unused = (await adminAgent.post(`${API}/admin/pickup-locations`).send({ name: 'Cổng phụ' })).body.data.location;
+    expect((await adminAgent.delete(`${API}/admin/pickup-locations/${unused.id}`)).status).toBe(200);
+    expect(await prisma.campusPickupLocation.count({ where: { id: unused.id } })).toBe(0);
+
+    await placeOrder();
+    const used = await adminAgent.delete(`${API}/admin/pickup-locations/${pickup.id}`);
+    expect(used.status).toBe(422);
+    expect(used.body.error.message).toBe('Điểm nhận đã có đơn hàng. Hãy tắt điểm nhận thay vì xoá để giữ lịch sử.');
+    expect(await prisma.campusPickupLocation.count({ where: { id: pickup.id } })).toBe(1);
+    expect((await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ isActive: false })).body.data.location.isActive).toBe(false);
+
+    expect((await adminAgent.delete(`${API}/admin/pickup-locations/999999`)).status).toBe(404);
+    expect(await auditCount('PICKUP_LOCATION_DELETE')).toBe(1);
+  });
+
+  it('điểm nhận đã có đơn: không đổi được tên / toà nhà (đơn cũ không bị chuyển sang nơi khác), vẫn sửa hướng dẫn và bật / tắt được', async () => {
+    const { adminAgent, placeOrder, pickup, studentAgent } = await setup();
+    await prisma.campusPickupLocation.update({ where: { id: pickup.id }, data: { name: 'Căn tin cơ sở B', building: 'Cơ sở B' } });
+
+    // Chưa có đơn: đổi tên thoải mái
+    expect((await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở B', building: 'Cơ sở B' })).status).toBe(200);
+
+    const orderId = await placeOrder();
+    const renamed = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở A' });
+    expect(renamed.status).toBe(422);
+    expect(renamed.body.error.message).toContain('Hãy tắt điểm nhận này và tạo điểm nhận mới');
+    expect(renamed.body.error.details).toEqual([{ field: 'name', message: expect.stringContaining('không đổi được tên / toà nhà') }]);
+    const moved = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ building: 'Cơ sở A' });
+    expect(moved.status).toBe(422);
+    expect(moved.body.error.details.map((d: { field: string }) => d.field)).toEqual(['building']);
+
+    // Form gửi lại nguyên tên / toà cũ kèm hướng dẫn mới → được; tắt điểm nhận → được
+    const ok = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở B', building: 'Cơ sở B', description: 'Cạnh thang máy', isActive: false });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.location).toMatchObject({ name: 'Căn tin cơ sở B', building: 'Cơ sở B', description: 'Cạnh thang máy', isActive: false });
+
+    // Sinh viên vẫn thấy đúng nơi đã chọn
+    const order = (await studentAgent.get(`${API}/orders/${orderId}`)).body.data.order;
+    expect(order.pickupLocation).toMatchObject({ name: 'Căn tin cơ sở B', building: 'Cơ sở B' });
+  });
 });
 
 describe('Đơn hàng toàn hệ thống', () => {
@@ -210,6 +389,38 @@ describe('Đơn hàng toàn hệ thống', () => {
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.data.order).toMatchObject({ status: 'CANCELLED', paymentStatus: 'VOIDED', cancelReason: 'Quầy mất điện' });
     expect(await auditCount('ORDER_STATUS_CHANGE')).toBe(1);
+    // Nhật ký lưu cả trạng thái cũ để tra cứu "từ đâu sang đâu"
+    expect(await prisma.auditLog.findFirstOrThrow({ where: { action: 'ORDER_STATUS_CHANGE' } })).toMatchObject({
+      entityType: 'Order',
+      entityId: String(orderId),
+      metadata: { from: 'PENDING', to: 'CANCELLED', reason: 'Quầy mất điện' },
+    });
+  });
+
+  it('admin huỷ đơn bắt buộc lý do (sinh viên tự huỷ thì không cần); ngày không tồn tại → 400', async () => {
+    const { adminAgent, studentAgent, placeOrder, stall } = await setup();
+    const orderId = await placeOrder();
+
+    const noReason = await adminAgent.patch(`${API}/admin/orders/${orderId}/status`).send({ status: 'CANCELLED', reason: '   ' });
+    expect(noReason.status).toBe(400);
+    expect(noReason.body.error.details).toEqual([{ field: 'reason', message: 'Vui lòng nhập lý do' }]);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('PENDING');
+    expect(await auditCount('ORDER_STATUS_CHANGE')).toBe(0);
+    expect((await studentAgent.post(`${API}/orders/${orderId}/cancel`).send({})).status).toBe(200);
+
+    // Ngày không tồn tại không bị âm thầm đổi sang ngày khác, cũng không gây lỗi 500
+    const vendorAgent = await loginAs('vendor@test.local');
+    const cases = [
+      [adminAgent, '/admin/orders?from=2026-13-40'],
+      [adminAgent, '/admin/orders?to=2026-02-30'],
+      [vendorAgent, `/vendor/stalls/${stall.id}/orders?from=2026-11-31`],
+      [vendorAgent, `/vendor/stalls/${stall.id}/reports?from=2026-02-30&to=2026-03-01`],
+    ] as const;
+    for (const [agent, url] of cases) {
+      const res = await agent.get(`${API}${url}`);
+      expect(res.status, url).toBe(400);
+      expect(res.body.error.details[0].message, url).toBe('Ngày không tồn tại');
+    }
   });
 });
 
@@ -282,5 +493,27 @@ describe('Nhật ký quản trị', () => {
     expect(filtered.body.data).toHaveLength(1);
     expect(filtered.body.data[0]).toMatchObject({ action: 'CATEGORY_CREATE', entityType: 'FoodCategory', actor: { email: 'admin@test.local' } });
     expect((await adminAgent.get(`${API}/admin/audit-logs?action=XOA_HET`)).status).toBe(400);
+  });
+
+  it('lọc được nhật ký SEED_DATABASE; phân trang không trùng / sót khi nhiều bản ghi trùng thời điểm', async () => {
+    const { adminAgent, placeOrder } = await setup();
+    const sameTime = new Date('2026-11-01T03:00:00Z');
+    await prisma.auditLog.createMany({
+      data: ['SEED_DATABASE', 'CATEGORY_CREATE', 'CATEGORY_CREATE'].map((action) => ({ action, entityType: 'System', createdAt: sameTime })),
+    });
+    const seed = await adminAgent.get(`${API}/admin/audit-logs?action=SEED_DATABASE`);
+    expect(seed.status).toBe(200);
+    expect(seed.body.meta.total).toBe(1);
+
+    const pagedIds = async (path: string, pages: number) => {
+      const ids: number[] = [];
+      for (let page = 1; page <= pages; page++) ids.push(...(await adminAgent.get(`${API}${path}&page=${page}`)).body.data.map((x: { id: number }) => x.id));
+      return ids;
+    };
+    expect(new Set(await pagedIds('/admin/audit-logs?pageSize=1', 3)).size).toBe(3);
+
+    const orders = [await placeOrder(), await placeOrder(), await placeOrder()];
+    await prisma.order.updateMany({ where: { id: { in: orders } }, data: { createdAt: sameTime } });
+    expect((await pagedIds('/admin/orders?pageSize=1', 3)).sort()).toEqual([...orders].sort());
   });
 });

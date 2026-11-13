@@ -1,8 +1,14 @@
 import { z } from 'zod';
 import { CAMPUS_TIME_ZONE } from './opening-hours.js';
 
-/** Ngày dạng YYYY-MM-DD theo giờ Việt Nam */
-export const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải có dạng YYYY-MM-DD');
+/** Ngày dạng YYYY-MM-DD theo giờ Việt Nam. Phải là ngày có thật: 2026-02-30 hay 2026-13-01 bị từ chối */
+export const dateOnlySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải có dạng YYYY-MM-DD')
+  .refine((ymd) => {
+    const date = new Date(`${ymd}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === ymd;
+  }, 'Ngày không tồn tại');
 
 /** 00:00 giờ Việt Nam của ngày `ymd` (trả về thời điểm UTC tương ứng) */
 export function vnDayStart(ymd: string): Date {

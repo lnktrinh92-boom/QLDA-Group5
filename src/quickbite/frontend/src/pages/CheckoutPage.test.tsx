@@ -16,7 +16,7 @@ vi.mock('@/services/orders.service', async (importOriginal) => {
   return { ...actual, ordersService: { pickupLocations: vi.fn(), create: vi.fn() } };
 });
 const toastError = vi.fn();
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (m: string) => toastError(m) } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (m: string, o?: unknown) => (o ? toastError(m, o) : toastError(m)) } }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,6 +81,23 @@ describe('CheckoutPage', () => {
     await waitFor(() => expect(ordersService.create).toHaveBeenCalledTimes(2));
     const [first, second] = vi.mocked(ordersService.create).mock.calls;
     expect(first![0].idempotencyKey).toBe(second![0].idempotencyKey);
+  });
+
+  it('đơn đã đặt ở lần gửi trước với điểm nhận khác → báo dưới ô điểm nhận, có nút Xem đơn, không chuyển trang', async () => {
+    const message = 'Đơn QB-261113-AB12 đã được đặt trước đó (nhận tại "Sảnh tòa A1"). Không thể đổi khi gửi lại — hãy xem đơn đó, huỷ nếu cần rồi đặt lại.';
+    vi.mocked(ordersService.create).mockRejectedValueOnce(
+      new ApiError(message, 409, 'ORDER_ALREADY_PLACED', [{ field: 'pickupLocationId', message, orderId: 42 }]),
+    );
+    const { router } = render();
+    await userEvent.click(await screen.findByRole('radio', { name: /Thư viện/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Đặt món' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/thanh-toan');
+    expect(toastError).toHaveBeenCalledWith(message, { action: expect.objectContaining({ label: 'Xem đơn' }) });
+    const { action } = toastError.mock.calls[0]![1] as { action: { onClick: () => void } };
+    action.onClick();
+    await waitFor(() => expect(router.state.location.pathname).toBe('/don-hang/42'));
   });
 
   it('quầy chưa cài tài khoản: chỉ chọn được tiền mặt, chuyển khoản bị khoá kèm lý do', async () => {

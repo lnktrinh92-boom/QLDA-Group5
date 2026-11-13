@@ -21,8 +21,11 @@ export const AUDIT_ACTIONS = [
   'CATEGORY_DELETE',
   'PICKUP_LOCATION_CREATE',
   'PICKUP_LOCATION_UPDATE',
+  'PICKUP_LOCATION_DELETE',
   'ORDER_STATUS_CHANGE',
   'REVIEW_MODERATE',
+  /** Ghi bởi script nạp dữ liệu mẫu (prisma/seed.ts) */
+  'SEED_DATABASE',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

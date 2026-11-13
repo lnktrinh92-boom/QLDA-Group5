@@ -106,6 +106,8 @@ function PickupForm({ location, onDone }: { location: AdminPickupLocation | null
     resolver: zodResolver(schema),
     defaultValues: { name: location?.name ?? '', building: location?.building ?? '', description: location?.description ?? '', isActive: location?.isActive ?? true },
   });
+  // Đã có đơn → khoá tên / toà nhà (server cũng chặn), vẫn sửa hướng dẫn và bật / tắt được
+  const locked = !!location && location.orderCount > 0;
   const save = useMutation({
     mutationFn: (v: Values) => {
       const input = { name: v.name, building: v.building.trim() || null, description: v.description.trim() || null, isActive: v.isActive };
@@ -121,8 +123,13 @@ function PickupForm({ location, onDone }: { location: AdminPickupLocation | null
   });
   return (
     <form noValidate className="space-y-4 p-6 pt-4" onSubmit={handleSubmit((v) => save.mutate(v))}>
-      <FormField label="Tên điểm nhận" required placeholder="Vd: Căn tin cơ sở B" error={errors.name?.message} {...register('name')} />
-      <FormField label="Toà nhà" error={errors.building?.message} {...register('building')} />
+      {locked && (
+        <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+          Điểm nhận đã có {location.orderCount} đơn hàng nên không đổi được tên và toà nhà (đơn cũ sẽ hiện sai nơi nhận). Muốn đổi nơi nhận: tắt điểm này và thêm điểm nhận mới.
+        </p>
+      )}
+      <FormField label="Tên điểm nhận" required readOnly={locked} placeholder="Vd: Căn tin cơ sở B" error={errors.name?.message} {...register('name')} />
+      <FormField label="Toà nhà" readOnly={locked} error={errors.building?.message} {...register('building')} />
       <FormField label="Hướng dẫn tìm đường" placeholder="Vd: Quầy nhận món cạnh thang máy" error={errors.description?.message} {...register('description')} />
       <Controller control={control} name="isActive" render={({ field }) => <Switch label="Đang mở (sinh viên chọn được)" checked={field.value} onChange={field.onChange} />} />
       <div className="flex justify-end gap-2">

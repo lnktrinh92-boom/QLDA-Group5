@@ -103,7 +103,7 @@ adminOperationsRouter.get('/orders', async (req, res) => {
   const [orders, total] = await Promise.all([
     prisma.order.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       ...toSkipTake(query),
       select: {
         id: true,
@@ -139,8 +139,15 @@ adminOperationsRouter.get('/orders/:id', async (req, res) => {
 adminOperationsRouter.patch('/orders/:id/status', async (req, res) => {
   const { id } = idParamSchema.parse(req.params);
   const { status, reason } = updateOrderStatusSchema.parse(req.body);
-  const order = await transitionOrder({ orderId: id, to: status, actor: 'ADMIN', userId: currentUser(req).id, reason });
-  await audit({ req, action: 'ORDER_STATUS_CHANGE', entityType: 'Order', entityId: id, metadata: { to: status, reason: reason ?? null } });
+  const order = await transitionOrder({
+    orderId: id,
+    to: status,
+    actor: 'ADMIN',
+    userId: currentUser(req).id,
+    reason,
+    // Ghi nhật ký (kèm trạng thái cũ) trong cùng transaction: đổi trạng thái và nhật ký cùng thành công / thất bại
+    onTransition: (tx, change) => audit({ req, action: 'ORDER_STATUS_CHANGE', entityType: 'Order', entityId: id, metadata: change }, tx),
+  });
   sendSuccess(res, { order });
 });
 
@@ -202,7 +209,7 @@ adminOperationsRouter.get('/audit-logs', async (req, res) => {
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       ...toSkipTake(query),
       include: { actor: { select: { id: true, fullName: true, email: true } } },
     }),

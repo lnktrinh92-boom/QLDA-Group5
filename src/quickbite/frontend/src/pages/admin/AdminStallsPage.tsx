@@ -46,12 +46,20 @@ export function AdminStallsPage() {
     {
       key: 'members',
       header: 'Nhân sự',
-      cell: (s) =>
-        s.memberships.length === 0 ? (
-          <span className="text-xs font-semibold text-amber-700">Chưa có chủ quầy</span>
-        ) : (
-          <span className="text-navy-600">{s.memberships.map((m) => m.user.fullName).join(', ')}</span>
-        ),
+      cell: (s) => {
+        const owner = s.memberships.find((m) => m.role === 'OWNER');
+        const staff = s.memberships.length - (owner ? 1 : 0);
+        return (
+          <>
+            {owner ? (
+              <p className="text-navy-700">{owner.user.fullName}</p>
+            ) : (
+              <p className="text-xs font-semibold text-amber-700">Chưa có chủ quầy</p>
+            )}
+            {staff > 0 && <p className="text-xs text-navy-500">{staff} nhân viên</p>}
+          </>
+        );
+      },
     },
     { key: 'stats', header: 'Món / Đơn', align: 'right', cell: (s) => <span className="tabular-nums">{s._count.menuItems} / {s._count.orders}</span> },
     { key: 'rating', header: 'Đánh giá', align: 'right', cell: (s) => (s.rating.average !== null ? `${s.rating.average.toFixed(1)} ★ (${s.rating.count})` : '—') },

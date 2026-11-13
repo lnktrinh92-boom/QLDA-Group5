@@ -17,8 +17,11 @@ const role = z.enum(['STUDENT', 'VENDOR', 'ADMIN']);
 const status = z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']);
 const nullable = <T extends z.ZodType>(s: T) => z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), s.nullish());
 
+const keyword = z.string().trim().max(100, 'Từ khoá tối đa 100 ký tự').optional();
 const listQuery = paginationSchema.extend({
-  search: z.string().trim().max(100).optional(),
+  /** Từ khoá tìm theo tên, email, mã sinh viên. `search` là tên cũ, giao diện vẫn dùng */
+  q: keyword,
+  search: keyword,
   role: role.optional(),
   status: status.optional(),
 });
@@ -48,15 +51,17 @@ const loadUser = (id: number) =>
 
 adminUsersRouter.get('/', async (req, res) => {
   const query = listQuery.parse(req.query);
+  const q = query.q || query.search;
   const where: Prisma.UserWhereInput = {
     role: query.role,
     status: query.status,
-    ...(query.search && {
-      OR: [{ fullName: { contains: query.search } }, { email: { contains: query.search } }, { studentCode: { contains: query.search } }],
+    ...(q && {
+      OR: [{ fullName: { contains: q } }, { email: { contains: q } }, { studentCode: { contains: q } }],
     }),
   };
   const [users, total] = await Promise.all([
-    prisma.user.findMany({ where, include: userWithStallsInclude, orderBy: { createdAt: 'desc' }, ...toSkipTake(query) }),
+    // Sắp thêm theo id để thứ tự ổn định khi nhiều tài khoản tạo cùng lúc (phân trang không trùng / sót)
+    prisma.user.findMany({ where, include: userWithStallsInclude, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], ...toSkipTake(query) }),
     prisma.user.count({ where }),
   ]);
   sendSuccess(res, users.map(toPublicUser), 200, buildPaginationMeta(query.page, query.pageSize, total));
@@ -114,6 +119,18 @@ adminUsersRouter.patch('/:id', async (req, res) => {
       const activeAdmins = await tx.$queryRaw<{ id: number }[]>`
         SELECT id FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE' FOR UPDATE`;
       if (activeAdmins.length <= 1) throw AppError.unprocessable('Hệ thống phải còn ít nhất một quản trị viên đang hoạt động');
+    }
+
+    // Chủ quầy phải chuyển quyền cho người khác trước khi đổi sang vai trò khác,
+    // nếu không quầy sẽ bị bỏ trống chủ (vi phạm quy tắc mỗi quầy đúng 1 chủ quầy)
+    if (roleChanged && input.role !== 'VENDOR') {
+      const owned = await tx.vendorMembership.findMany({ where: { userId: id, role: 'OWNER' }, select: { stall: { select: { name: true } } } });
+      if (owned.length > 0) {
+        const names = owned.map((m) => `"${m.stall.name}"`).join(', ');
+        throw AppError.unprocessable(`${before.fullName} đang là chủ quầy ${names}. Hãy chuyển quyền chủ quầy cho người khác (Quầy ăn → Nhân sự) trước khi đổi vai trò.`, [
+          { field: 'role', message: `Đang là chủ quầy ${names}, cần chuyển quyền trước` },
+        ]);
+      }
     }
 
     const updated = await tx.user.update({

@@ -395,7 +395,7 @@ export const openApiSpec = {
     // ─────────── Quản trị ───────────
     '/admin/dashboard': { get: op({ tag: 'Quản trị', summary: 'Tổng quan toàn hệ thống' }) },
     '/admin/users': {
-      get: op({ tag: 'Quản trị', summary: 'Danh sách người dùng', params: [query('search', 'Tên, email, mã SV'), query('role', 'Vai trò', { type: 'string', enum: ['STUDENT', 'VENDOR', 'ADMIN'] }), query('status', 'Trạng thái', { type: 'string', enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED'] }), ...pageParams], response: paged(ref('User')) }),
+      get: op({ tag: 'Quản trị', summary: 'Danh sách người dùng', params: [query('q', 'Từ khoá: tên, email, mã SV (không phân biệt hoa thường, dấu)'), query('search', 'Tên cũ của q (giữ để tương thích)'), query('role', 'Vai trò', { type: 'string', enum: ['STUDENT', 'VENDOR', 'ADMIN'] }), query('status', 'Trạng thái', { type: 'string', enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED'] }), ...pageParams], response: paged(ref('User')) }),
       post: op({ tag: 'Quản trị', summary: 'Tạo tài khoản', body: createUserSchema, status: 201, errors: { 409: err('Email đã được dùng') } }),
     },
     '/admin/users/{id}': {
@@ -407,15 +407,15 @@ export const openApiSpec = {
     },
     '/admin/stalls': {
       get: op({ tag: 'Quản trị', summary: 'Danh sách quầy (kể cả đã tắt)', params: [query('q', 'Tên / vị trí')] }),
-      post: op({ tag: 'Quản trị', summary: 'Tạo quầy (slug tự sinh nếu bỏ trống)', body: createStallSchema, status: 201 }),
+      post: op({ tag: 'Quản trị', summary: 'Tạo quầy (slug tự sinh nếu bỏ trống)', description: 'ownerEmail (không bắt buộc): gán chủ quầy ngay khi tạo. Mỗi quầy có đúng 1 chủ quầy.', body: createStallSchema, status: 201, errors: { 404: err('Không tìm thấy chủ quầy'), 409: err('Slug đã được dùng'), 422: err('Người dùng không phải VENDOR') } }),
     },
     '/admin/stalls/{id}': { patch: op({ tag: 'Quản trị', summary: 'Sửa / bật tắt quầy', params: [path('id', 'ID quầy')], body: updateStallSchema }) },
     '/admin/stalls/{id}/members': {
-      post: op({ tag: 'Quản trị', summary: 'Gán nhân sự (người dùng vai trò VENDOR)', params: [path('id', 'ID quầy')], body: stallMemberSchema, status: 201, errors: { 409: err('Đã thuộc quầy'), 422: err('Người dùng không phải VENDOR') } }),
+      post: op({ tag: 'Quản trị', summary: 'Gán nhân sự (người dùng vai trò VENDOR)', params: [path('id', 'ID quầy')], body: stallMemberSchema, status: 201, description: 'Mỗi quầy có đúng 1 chủ quầy: thêm với role OWNER khi quầy đã có chủ quầy → 409.', errors: { 409: err('Đã thuộc quầy / quầy đã có chủ quầy'), 422: err('Người dùng không phải VENDOR') } }),
     },
     '/admin/stalls/{id}/members/{userId}': {
-      patch: op({ tag: 'Quản trị', summary: 'Đổi vai trò nhân sự', params: [path('id', 'ID quầy'), path('userId', 'ID người dùng')], body: { type: 'object', required: ['role'], properties: { role: { type: 'string', enum: ['OWNER', 'STAFF'] } } } }),
-      delete: op({ tag: 'Quản trị', summary: 'Gỡ nhân sự khỏi quầy', params: [path('id', 'ID quầy'), path('userId', 'ID người dùng')] }),
+      patch: op({ tag: 'Quản trị', summary: 'Đổi vai trò nhân sự / chuyển quyền chủ quầy', description: 'role = OWNER: chuyển quyền, chủ quầy cũ thành STAFF. Hạ chủ quầy duy nhất xuống STAFF → 422.', params: [path('id', 'ID quầy'), path('userId', 'ID người dùng')], errors: { 422: err('Không thể hạ chủ quầy duy nhất') }, body: { type: 'object', required: ['role'], properties: { role: { type: 'string', enum: ['OWNER', 'STAFF'] } } } }),
+      delete: op({ tag: 'Quản trị', summary: 'Gỡ nhân sự khỏi quầy', params: [path('id', 'ID quầy'), path('userId', 'ID người dùng')], errors: { 422: err('Không gỡ được chủ quầy (chuyển quyền trước)') } }),
     },
     '/admin/categories': {
       get: op({ tag: 'Quản trị', summary: 'Tất cả danh mục' }),
@@ -429,7 +429,10 @@ export const openApiSpec = {
       get: op({ tag: 'Quản trị', summary: 'Tất cả điểm nhận' }),
       post: op({ tag: 'Quản trị', summary: 'Tạo điểm nhận', body: pickupSchema, status: 201 }),
     },
-    '/admin/pickup-locations/{id}': { patch: op({ tag: 'Quản trị', summary: 'Sửa / bật tắt điểm nhận', params: [path('id', 'ID điểm nhận')], body: pickupSchema.partial() }) },
+    '/admin/pickup-locations/{id}': {
+      patch: op({ tag: 'Quản trị', summary: 'Sửa / bật tắt điểm nhận', params: [path('id', 'ID điểm nhận')], body: pickupSchema.partial() }),
+      delete: op({ tag: 'Quản trị', summary: 'Xoá điểm nhận chưa có đơn', params: [path('id', 'ID điểm nhận')], errors: { 422: err('Điểm nhận đã có đơn hàng') } }),
+    },
     '/admin/orders': {
       get: op({ tag: 'Quản trị', summary: 'Đơn toàn hệ thống', params: [query('status', 'Trạng thái', ORDER_STATUS), query('stallId', 'ID quầy', { type: 'integer' }), query('q', 'Mã đơn / sinh viên'), ...dateParams, ...pageParams], response: paged(ref('Order')) }),
     },

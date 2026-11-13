@@ -23,6 +23,26 @@ const GROUP_STATUSES: Record<NonNullable<ListOrdersQuery['group']>, OrderStatus[
 /** Lỗi từ chối tạo đơn, kèm chi tiết để giao diện hiển thị */
 const reject = (message: string, details?: unknown) => new AppError(422, 'ORDER_REJECTED', message, details);
 
+/**
+ * Gửi lại cùng idempotencyKey phải là CÙNG yêu cầu. Nếu điểm nhận / giờ nhận / cách thanh toán khác đơn đã tạo
+ * (vd mạng chập chờn, sinh viên đổi sang cơ sở khác rồi bấm lại) thì báo rõ thay vì lặng lẽ trả đơn cũ —
+ * tránh sinh viên tưởng đã đặt ở nơi mới trong khi quầy giao tới nơi cũ.
+ */
+function assertSameRequest(
+  order: { id: number; orderNumber: string; pickupLocationId: number; pickupTime: Date | null; paymentMethod: string; pickupLocation: { name: string } },
+  input: CreateOrderInput,
+) {
+  const wantTime = input.pickupTime ? new Date(input.pickupTime).getTime() : null;
+  const field =
+    order.pickupLocationId !== input.pickupLocationId ? 'pickupLocationId'
+    : (order.pickupTime?.getTime() ?? null) !== wantTime ? 'pickupTime'
+    : order.paymentMethod !== input.paymentMethod ? 'paymentMethod'
+    : null;
+  if (!field) return;
+  const message = `Đơn ${order.orderNumber} đã được đặt trước đó (nhận tại "${order.pickupLocation.name}"). Không thể đổi khi gửi lại — hãy xem đơn đó, huỷ nếu cần rồi đặt lại.`;
+  throw new AppError(409, 'ORDER_ALREADY_PLACED', message, [{ field, message, orderId: order.id }]);
+}
+
 async function findOwnOrder(studentId: number, idempotencyKey: string) {
   return prisma.order.findUnique({
     where: { studentId_idempotencyKey: { studentId, idempotencyKey } },
@@ -40,7 +60,10 @@ export const ordersService = {
    */
   async create(studentId: number, input: CreateOrderInput) {
     const existing = await findOwnOrder(studentId, input.idempotencyKey);
-    if (existing) return { order: toOrderDto(existing), created: false };
+    if (existing) {
+      assertSameRequest(existing, input);
+      return { order: toOrderDto(existing), created: false };
+    }
 
     try {
       const result = await prisma.$transaction(
@@ -52,9 +75,12 @@ export const ordersService = {
           // Kiểm tra lại sau khi đã khoá: request trùng khoá vừa tạo đơn xong thì trả lại đơn đó
           const duplicate = await tx.order.findUnique({
             where: { studentId_idempotencyKey: { studentId, idempotencyKey: input.idempotencyKey } },
-            select: { id: true },
+            select: { id: true, orderNumber: true, pickupLocationId: true, pickupTime: true, paymentMethod: true, pickupLocation: { select: { name: true } } },
           });
-          if (duplicate) return { id: duplicate.id, created: false };
+          if (duplicate) {
+            assertSameRequest(duplicate, input);
+            return { id: duplicate.id, created: false };
+          }
 
           const cart = await tx.cart.findUnique({
             where: { userId: studentId },
@@ -195,7 +221,10 @@ export const ordersService = {
       // Hai request cùng idempotencyKey gửi đồng thời: request sau vi phạm UNIQUE → trả lại đơn đã tạo
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         const duplicate = await findOwnOrder(studentId, input.idempotencyKey);
-        if (duplicate) return { order: toOrderDto(duplicate), created: false };
+        if (duplicate) {
+          assertSameRequest(duplicate, input);
+          return { order: toOrderDto(duplicate), created: false };
+        }
       }
       throw error;
     }
