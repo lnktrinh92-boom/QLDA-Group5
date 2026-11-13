@@ -347,6 +347,32 @@ describe('Danh mục & điểm nhận', () => {
     expect((await adminAgent.delete(`${API}/admin/pickup-locations/999999`)).status).toBe(404);
     expect(await auditCount('PICKUP_LOCATION_DELETE')).toBe(1);
   });
+
+  it('điểm nhận đã có đơn: không đổi được tên / toà nhà (đơn cũ không bị chuyển sang nơi khác), vẫn sửa hướng dẫn và bật / tắt được', async () => {
+    const { adminAgent, placeOrder, pickup, studentAgent } = await setup();
+    await prisma.campusPickupLocation.update({ where: { id: pickup.id }, data: { name: 'Căn tin cơ sở B', building: 'Cơ sở B' } });
+
+    // Chưa có đơn: đổi tên thoải mái
+    expect((await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở B', building: 'Cơ sở B' })).status).toBe(200);
+
+    const orderId = await placeOrder();
+    const renamed = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở A' });
+    expect(renamed.status).toBe(422);
+    expect(renamed.body.error.message).toContain('Hãy tắt điểm nhận này và tạo điểm nhận mới');
+    expect(renamed.body.error.details).toEqual([{ field: 'name', message: expect.stringContaining('không đổi được tên / toà nhà') }]);
+    const moved = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ building: 'Cơ sở A' });
+    expect(moved.status).toBe(422);
+    expect(moved.body.error.details.map((d: { field: string }) => d.field)).toEqual(['building']);
+
+    // Form gửi lại nguyên tên / toà cũ kèm hướng dẫn mới → được; tắt điểm nhận → được
+    const ok = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở B', building: 'Cơ sở B', description: 'Cạnh thang máy', isActive: false });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.location).toMatchObject({ name: 'Căn tin cơ sở B', building: 'Cơ sở B', description: 'Cạnh thang máy', isActive: false });
+
+    // Sinh viên vẫn thấy đúng nơi đã chọn
+    const order = (await studentAgent.get(`${API}/orders/${orderId}`)).body.data.order;
+    expect(order.pickupLocation).toMatchObject({ name: 'Căn tin cơ sở B', building: 'Cơ sở B' });
+  });
 });
 
 describe('Đơn hàng toàn hệ thống', () => {

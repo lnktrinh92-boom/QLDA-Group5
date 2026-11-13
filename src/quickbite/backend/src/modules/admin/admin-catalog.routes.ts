@@ -108,7 +108,19 @@ adminCatalogRouter.patch('/pickup-locations/:id', async (req, res) => {
   const { id } = idParamSchema.parse(req.params);
   const input = pickupSchema.partial().parse(req.body);
   const data = Object.fromEntries(Object.entries(input).filter(([k]) => k in (req.body ?? {})));
-  if (!(await prisma.campusPickupLocation.findUnique({ where: { id } }))) throw AppError.notFound('Không tìm thấy điểm nhận');
+  const current = await prisma.campusPickupLocation.findUnique({ where: { id }, include: { _count: { select: { orders: true } } } });
+  if (!current) throw AppError.notFound('Không tìm thấy điểm nhận');
+  // Đơn chỉ lưu mã điểm nhận: đổi tên / toà nhà của điểm đã có đơn sẽ làm mọi đơn cũ và đơn đang chờ
+  // hiện (và bị giao tới) nơi nhận mới, khác nơi sinh viên đã chọn. Chỉ cho sửa hướng dẫn và bật / tắt.
+  const renamed = 'name' in data && data.name !== current.name;
+  const moved = 'building' in data && (data.building ?? null) !== current.building;
+  if ((renamed || moved) && current._count.orders > 0) {
+    const message = `Điểm nhận đã có ${current._count.orders} đơn hàng nên không đổi được tên / toà nhà (đơn cũ sẽ hiện sai nơi nhận)`;
+    throw AppError.unprocessable(
+      `Điểm nhận "${current.name}" đã có ${current._count.orders} đơn hàng. Không thể đổi tên hoặc toà nhà vì các đơn này sẽ hiện sai nơi nhận. Hãy tắt điểm nhận này và tạo điểm nhận mới.`,
+      [renamed && { field: 'name', message }, moved && { field: 'building', message }].filter(Boolean),
+    );
+  }
   if (input.name && (await prisma.campusPickupLocation.findFirst({ where: { name: input.name, id: { not: id } } }))) throw duplicateName('Điểm nhận');
   const location = await prisma.campusPickupLocation.update({ where: { id }, data, include: { _count: { select: { orders: true } } } });
   await audit({ req, action: 'PICKUP_LOCATION_UPDATE', entityType: 'CampusPickupLocation', entityId: id, metadata: { changed: Object.keys(data) } });
