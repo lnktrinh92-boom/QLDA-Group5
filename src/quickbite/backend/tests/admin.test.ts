@@ -36,7 +36,7 @@ describe('Phân quyền quản trị', () => {
   it('sinh viên & chủ quầy bị chặn (403) ở mọi API quản trị', async () => {
     const { studentAgent } = await setup();
     const vendorAgent = await loginAs('vendor@test.local');
-    for (const path of ['/dashboard', '/users', '/orders', '/reviews', '/audit-logs']) {
+    for (const path of ['/dashboard', '/users', '/stalls', '/categories', '/pickup-locations', '/orders', '/reviews', '/audit-logs']) {
       expect((await studentAgent.get(`${API}/admin${path}`)).status).toBe(403);
       expect((await vendorAgent.get(`${API}/admin${path}`)).status).toBe(403);
     }
@@ -99,6 +99,19 @@ describe('Quản lý người dùng', () => {
     ]);
     expect([a.status, b.status]).toContain(200);
     expect(await prisma.user.count({ where: { role: 'ADMIN', status: 'ACTIVE' } })).toBeGreaterThanOrEqual(1);
+  });
+
+  it('ảnh quầy chỉ nhận ảnh tự tải lên hoặc tên miền được phép', async () => {
+    const { adminAgent, stall } = await setup();
+    const tracker = await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: 'https://tracker.example.com/pixel.gif' });
+    expect(tracker.status).toBe(400);
+    const allowed = await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: 'https://images.unsplash.com/photo-1?w=800' });
+    expect(allowed.status).toBe(200);
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/uploads/../../.env' })).status).toBe(400);
+    // Ảnh có sẵn trong giao diện (frontend/public/images)
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/food/pho-bo-tai.webp' })).status).toBe(200);
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/../.env' })).status).toBe(400);
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/food/x.svg' })).status).toBe(400);
   });
 
   it('đổi vai trò chủ quầy → sinh viên thì gỡ khỏi quầy', async () => {
@@ -170,6 +183,130 @@ describe('Quản lý người dùng', () => {
     expect((await adminAgent.patch(`${API}/admin/users/${student2.id}`).send({ role: 'VENDOR' })).body.data.user.role).toBe('VENDOR');
     expect(await auditCount('USER_STATUS_CHANGE')).toBe(2);
     expect(await auditCount('USER_ROLE_CHANGE')).toBe(1);
+  });
+});
+
+describe('Quầy ăn & nhân viên', () => {
+  it('tạo quầy: slug tự sinh từ tên tiếng Việt và không trùng', async () => {
+    const { adminAgent } = await setup();
+    const a = await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Bún Bò Đông Ba', location: 'Tòa C' });
+    const b = await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Bún bò đông ba', location: 'Tòa D' });
+    expect(a.status).toBe(201);
+    expect(a.body.data.stall.slug).toBe('bun-bo-dong-ba');
+    expect(b.body.data.stall.slug).toBe('bun-bo-dong-ba-2');
+    expect((await request(app).get(`${API}/stalls/bun-bo-dong-ba`)).status).toBe(200);
+  });
+
+  it('tắt quầy: ẩn khỏi trang công khai và gỡ món khỏi giỏ hàng', async () => {
+    const { adminAgent, studentAgent, stall, rice } = await setup();
+    await studentAgent.post(`${API}/cart/items`).send({ menuItemId: rice.id });
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ isActive: false })).status).toBe(200);
+    expect((await request(app).get(`${API}/stalls/${stall.slug}`)).status).toBe(404);
+    expect((await studentAgent.get(`${API}/cart`)).body.data.items).toHaveLength(0);
+  });
+
+  it('gán nhân viên bằng email: chỉ người có vai trò Chủ quầy; gỡ ra thì mất quyền', async () => {
+    const { adminAgent, stall } = await setup();
+    expect((await adminAgent.post(`${API}/admin/stalls/${stall.id}/members`).send({ email: 'sv@test.local' })).status).toBe(422);
+
+    const newVendor = await createUser({ role: 'VENDOR', email: 'nv@test.local' });
+    const add = await adminAgent.post(`${API}/admin/stalls/${stall.id}/members`).send({ email: 'nv@test.local', role: 'STAFF' });
+    expect(add.status).toBe(201);
+    expect(add.body.data.stall.memberships.map((m: { user: { email: string } }) => m.user.email)).toContain('nv@test.local');
+    expect((await adminAgent.post(`${API}/admin/stalls/${stall.id}/members`).send({ email: 'nv@test.local' })).status).toBe(409);
+
+    const staffAgent = await loginAs('nv@test.local');
+    expect((await staffAgent.get(`${API}/vendor/stalls/${stall.id}/orders`)).status).toBe(200);
+
+    expect((await adminAgent.delete(`${API}/admin/stalls/${stall.id}/members/${newVendor.id}`)).status).toBe(200);
+    expect((await staffAgent.get(`${API}/vendor/stalls/${stall.id}/orders`)).status).toBe(404);
+    expect(await auditCount('STALL_MEMBER_ADD')).toBe(1);
+    expect(await auditCount('STALL_MEMBER_REMOVE')).toBe(1);
+  });
+
+  it('mỗi quầy đúng 1 chủ quầy: tạo kèm chủ quầy, không thêm chủ quầy thứ 2, chuyển quyền, không gỡ / hạ chủ quầy duy nhất', async () => {
+    const { adminAgent, stall, vendor } = await setup();
+    const staff = await createUser({ role: 'VENDOR', email: 'nv2@test.local' });
+    await createUser({ role: 'VENDOR', email: 'chu.moi@test.local' });
+    const owners = (stallId: number) => prisma.vendorMembership.findMany({ where: { stallId, role: 'OWNER' }, select: { userId: true } });
+
+    // Tạo quầy kèm chủ quầy; người chưa có vai trò Chủ quầy → 422, quầy không được tạo
+    const created = await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Quầy Mới', location: 'Tòa B', ownerEmail: 'Chu.Moi@test.local' });
+    expect(created.status).toBe(201);
+    expect(created.body.data.stall.memberships).toMatchObject([{ role: 'OWNER', user: { email: 'chu.moi@test.local' } }]);
+    expect((await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Quầy Lỗi', location: 'Tòa B', ownerEmail: 'sv@test.local' })).status).toBe(422);
+    expect(await prisma.foodStall.count({ where: { name: 'Quầy Lỗi' } })).toBe(0);
+
+    // Quầy A đã có chủ quầy → không thêm chủ quầy thứ 2, thêm làm nhân viên thì được
+    const second = await adminAgent.post(`${API}/admin/stalls/${stall.id}/members`).send({ email: 'nv2@test.local', role: 'OWNER' });
+    expect(second.status).toBe(409);
+    expect(second.body.error.message).toMatch(/Mỗi quầy chỉ có 1 chủ quầy/);
+    expect((await adminAgent.post(`${API}/admin/stalls/${stall.id}/members`).send({ email: 'nv2@test.local', role: 'STAFF' })).status).toBe(201);
+
+    // Không hạ / gỡ chủ quầy duy nhất
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}/members/${vendor.id}`).send({ role: 'STAFF' })).status).toBe(422);
+    expect((await adminAgent.delete(`${API}/admin/stalls/${stall.id}/members/${vendor.id}`)).status).toBe(422);
+    expect(await owners(stall.id)).toEqual([{ userId: vendor.id }]);
+
+    // Chuyển quyền: nhân viên lên chủ quầy, chủ quầy cũ thành nhân viên → gỡ được
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}/members/${staff.id}`).send({ role: 'OWNER' })).status).toBe(200);
+    expect(await owners(stall.id)).toEqual([{ userId: staff.id }]);
+    expect(await prisma.vendorMembership.findFirstOrThrow({ where: { stallId: stall.id, userId: vendor.id } })).toMatchObject({ role: 'STAFF' });
+    expect((await adminAgent.delete(`${API}/admin/stalls/${stall.id}/members/${vendor.id}`)).status).toBe(200);
+    expect(await owners(stall.id)).toEqual([{ userId: staff.id }]);
+
+    // Quầy chưa có chủ quầy, hai admin gán chủ quầy cùng lúc → chỉ một người thành công
+    const empty = (await adminAgent.post(`${API}/admin/stalls`).send({ name: 'Quầy Trống', location: 'Tòa C' })).body.data.stall;
+    const [a, b] = await Promise.all([
+      adminAgent.post(`${API}/admin/stalls/${empty.id}/members`).send({ email: 'nv2@test.local', role: 'OWNER' }),
+      adminAgent.post(`${API}/admin/stalls/${empty.id}/members`).send({ email: 'vendor@test.local', role: 'OWNER' }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await owners(empty.id)).toHaveLength(1);
+  });
+});
+
+describe('Danh mục & điểm nhận', () => {
+  it('danh mục: tạo, trùng tên 409, không xoá được khi còn món, tắt thì món bị ẩn', async () => {
+    const { adminAgent, category } = await setup();
+    const created = await adminAgent.post(`${API}/admin/categories`).send({ name: 'Đồ uống', icon: 'cup-soda', sortOrder: 2 });
+    expect(created.status).toBe(201);
+    expect(created.body.data.category.slug).toBe('do-uong');
+    expect((await adminAgent.post(`${API}/admin/categories`).send({ name: 'Đồ uống' })).status).toBe(409);
+
+    expect((await adminAgent.delete(`${API}/admin/categories/${category.id}`)).status).toBe(422);
+    expect((await adminAgent.delete(`${API}/admin/categories/${created.body.data.category.id}`)).status).toBe(200);
+
+    await adminAgent.patch(`${API}/admin/categories/${category.id}`).send({ isActive: false });
+    expect((await request(app).get(`${API}/menu-items`)).body.meta.total).toBe(0);
+  });
+
+  it('điểm nhận: tắt thì không đặt đơn tới đó được', async () => {
+    const { adminAgent, studentAgent, pickup, rice } = await setup();
+    const extra = await adminAgent.post(`${API}/admin/pickup-locations`).send({ name: 'Thư viện', building: 'Thư viện' });
+    expect(extra.status).toBe(201);
+    await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ isActive: false });
+    expect((await request(app).get(`${API}/pickup-locations`)).body.data.map((p: { name: string }) => p.name)).toEqual(['Thư viện']);
+
+    await studentAgent.post(`${API}/cart/items`).send({ menuItemId: rice.id });
+    expect((await studentAgent.post(`${API}/orders`).send({ pickupLocationId: pickup.id, idempotencyKey: `pk-${Date.now()}` })).status).toBe(422);
+  });
+
+  it('điểm nhận: chỉ xoá cứng khi chưa có đơn; đã có đơn → 422, tắt thay vì xoá', async () => {
+    const { adminAgent, placeOrder, pickup } = await setup();
+    const unused = (await adminAgent.post(`${API}/admin/pickup-locations`).send({ name: 'Cổng phụ' })).body.data.location;
+    expect((await adminAgent.delete(`${API}/admin/pickup-locations/${unused.id}`)).status).toBe(200);
+    expect(await prisma.campusPickupLocation.count({ where: { id: unused.id } })).toBe(0);
+
+    await placeOrder();
+    const used = await adminAgent.delete(`${API}/admin/pickup-locations/${pickup.id}`);
+    expect(used.status).toBe(422);
+    expect(used.body.error.message).toBe('Điểm nhận đã có đơn hàng. Hãy tắt điểm nhận thay vì xoá để giữ lịch sử.');
+    expect(await prisma.campusPickupLocation.count({ where: { id: pickup.id } })).toBe(1);
+    expect((await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ isActive: false })).body.data.location.isActive).toBe(false);
+
+    expect((await adminAgent.delete(`${API}/admin/pickup-locations/999999`)).status).toBe(404);
+    expect(await auditCount('PICKUP_LOCATION_DELETE')).toBe(1);
   });
 });
 
@@ -249,15 +386,15 @@ describe('Đánh giá & kiểm duyệt', () => {
 
 describe('Nhật ký quản trị', () => {
   it('liệt kê và lọc theo hành động, kèm người thực hiện', async () => {
-    const { adminAgent, student } = await setup();
-    await adminAgent.post(`${API}/admin/users`).send({ fullName: 'Chủ Quầy Mới', email: 'moi@test.local', password: 'Matkhau123', role: 'VENDOR' });
-    await adminAgent.patch(`${API}/admin/users/${student.id}`).send({ status: 'SUSPENDED' });
+    const { adminAgent } = await setup();
+    await adminAgent.post(`${API}/admin/categories`).send({ name: 'Ăn vặt' });
+    await adminAgent.post(`${API}/admin/pickup-locations`).send({ name: 'Cổng chính' });
 
     const all = await adminAgent.get(`${API}/admin/audit-logs`);
     expect(all.body.meta.total).toBe(2);
-    const filtered = await adminAgent.get(`${API}/admin/audit-logs?action=USER_CREATE`);
+    const filtered = await adminAgent.get(`${API}/admin/audit-logs?action=CATEGORY_CREATE`);
     expect(filtered.body.data).toHaveLength(1);
-    expect(filtered.body.data[0]).toMatchObject({ action: 'USER_CREATE', entityType: 'User', actor: { email: 'admin@test.local' } });
+    expect(filtered.body.data[0]).toMatchObject({ action: 'CATEGORY_CREATE', entityType: 'FoodCategory', actor: { email: 'admin@test.local' } });
     expect((await adminAgent.get(`${API}/admin/audit-logs?action=XOA_HET`)).status).toBe(400);
   });
 });

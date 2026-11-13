@@ -14,7 +14,7 @@ describe('Tài liệu OpenAPI', () => {
     const spec = await request(app).get(`${API}/openapi.json`);
     expect(spec.status).toBe(200);
     expect(spec.body.openapi).toBe('3.1.0');
-    expect(Object.keys(spec.body.paths).length).toBeGreaterThan(45);
+    expect(Object.keys(spec.body.paths).length).toBeGreaterThan(50);
 
     const ui = await request(app).get('/api/docs/');
     expect(ui.status).toBe(200);
