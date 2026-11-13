@@ -27,7 +27,6 @@ const NotificationsPage = page(() => import('@/pages/NotificationsPage'), 'Notif
 const AdminLayout = page(() => import('@/components/layout/AdminLayout'), 'AdminLayout');
 const AdminDashboardPage = page(() => import('@/pages/admin/AdminDashboardPage'), 'AdminDashboardPage');
 const AdminUsersPage = page(() => import('@/pages/admin/AdminUsersPage'), 'AdminUsersPage');
-const AdminStallsPage = page(() => import('@/pages/admin/AdminStallsPage'), 'AdminStallsPage');
 const AdminCategoriesPage = page(() => import('@/pages/admin/AdminCategoriesPage'), 'AdminCategoriesPage');
 const AdminPickupLocationsPage = page(() => import('@/pages/admin/AdminPickupLocationsPage'), 'AdminPickupLocationsPage');
 const AdminOrdersPage = page(() => import('@/pages/admin/AdminOrdersPage'), 'AdminOrdersPage');
@@ -75,7 +74,6 @@ export const routes = [
         children: [
           { index: true, element: <AdminDashboardPage /> },
           { path: 'nguoi-dung', element: <AdminUsersPage /> },
-          { path: 'quay-an', element: <AdminStallsPage /> },
           { path: 'danh-muc', element: <AdminCategoriesPage /> },
           { path: 'diem-nhan', element: <AdminPickupLocationsPage /> },
           { path: 'don-hang', element: <AdminOrdersPage /> },
