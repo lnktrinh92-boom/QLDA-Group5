@@ -114,11 +114,50 @@ describe('Quản lý người dùng', () => {
     expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}`).send({ imageUrl: '/images/food/x.svg' })).status).toBe(400);
   });
 
-  it('đổi vai trò chủ quầy → sinh viên thì gỡ khỏi quầy', async () => {
-    const { adminAgent, vendor } = await setup();
-    const res = await adminAgent.patch(`${API}/admin/users/${vendor.id}`).send({ role: 'STUDENT' });
+  it('đổi vai trò: chủ quầy phải chuyển quyền trước (quầy không bị mất chủ); nhân viên → sinh viên thì gỡ khỏi quầy', async () => {
+    const { adminAgent, vendor, stall } = await setup();
+    const staff = await createUser({ role: 'VENDOR', email: 'nv.quay@test.local' });
+    await prisma.vendorMembership.create({ data: { userId: staff.id, stallId: stall.id, role: 'STAFF' } });
+
+    // Chủ quầy duy nhất → bị chặn, quầy vẫn còn chủ, vai trò không đổi
+    const blocked = await adminAgent.patch(`${API}/admin/users/${vendor.id}`).send({ role: 'STUDENT' });
+    expect(blocked.status).toBe(422);
+    expect(blocked.body.error.message).toContain('đang là chủ quầy "Quầy A"');
+    expect(blocked.body.error.details).toEqual([{ field: 'role', message: expect.stringContaining('cần chuyển quyền trước') }]);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: vendor.id } })).toMatchObject({ role: 'VENDOR' });
+    expect(await prisma.vendorMembership.findFirst({ where: { stallId: stall.id, role: 'OWNER' } })).toMatchObject({ userId: vendor.id });
+    expect(await auditCount('USER_ROLE_CHANGE')).toBe(0);
+
+    // Nhân viên → sinh viên: gỡ khỏi quầy như cũ
+    const res = await adminAgent.patch(`${API}/admin/users/${staff.id}`).send({ role: 'STUDENT' });
     expect(res.body.data.user).toMatchObject({ role: 'STUDENT', stalls: [] });
-    expect(await prisma.vendorMembership.count({ where: { userId: vendor.id } })).toBe(0);
+    expect(await prisma.vendorMembership.count({ where: { userId: staff.id } })).toBe(0);
+
+    // Chuyển quyền chủ quầy cho người khác xong thì chủ cũ đổi vai trò được
+    const next = await createUser({ role: 'VENDOR', email: 'chu.moi2@test.local' });
+    await prisma.vendorMembership.create({ data: { userId: next.id, stallId: stall.id, role: 'STAFF' } });
+    expect((await adminAgent.patch(`${API}/admin/stalls/${stall.id}/members/${next.id}`).send({ role: 'OWNER' })).status).toBe(200);
+    const ok = await adminAgent.patch(`${API}/admin/users/${vendor.id}`).send({ role: 'STUDENT' });
+    expect(ok.status).toBe(200);
+    expect(await prisma.vendorMembership.findMany({ where: { stallId: stall.id }, select: { userId: true, role: true } })).toEqual([{ userId: next.id, role: 'OWNER' }]);
+  });
+
+  it('câu báo lỗi kiểm tra dữ liệu mặc định bằng tiếng Việt (phân trang, vai trò, trạng thái đơn)', async () => {
+    const { adminAgent, stall, admin } = await setup();
+    const detail = async (path: string, body?: object) => {
+      const res = body ? await adminAgent.patch(`${API}${path}`).send(body) : await adminAgent.get(`${API}${path}`);
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toBe('Dữ liệu gửi lên không hợp lệ');
+      return res.body.error.details.map((d: { message: string }) => d.message).join(' | ');
+    };
+    expect(await detail('/admin/users?pageSize=500')).toBe('Giá trị tối đa là 100');
+    expect(await detail('/admin/users?page=0')).toBe('Giá trị tối thiểu là 1');
+    expect(await detail('/admin/users?role=ABC')).toBe('Giá trị không hợp lệ. Chỉ chấp nhận: STUDENT, VENDOR, ADMIN');
+    expect(await detail('/admin/orders?status=XYZ')).toContain('Giá trị không hợp lệ. Chỉ chấp nhận: PENDING, ACCEPTED');
+    expect(await detail(`/vendor/stalls/${stall.id}/orders?page=abc`)).toBe('Phải là số');
+    expect(await detail(`/admin/users/${admin.id}`, { role: 'BOSS' })).toBe('Giá trị không hợp lệ. Chỉ chấp nhận: STUDENT, VENDOR, ADMIN');
+    // Câu báo lỗi riêng của schema vẫn được ưu tiên
+    expect(await detail('/admin/users?q=' + 'x'.repeat(101))).toBe('Từ khoá tối đa 100 ký tự');
   });
 
   it('đặt lại mật khẩu: mật khẩu cũ hết hiệu lực', async () => {
@@ -307,6 +346,32 @@ describe('Danh mục & điểm nhận', () => {
 
     expect((await adminAgent.delete(`${API}/admin/pickup-locations/999999`)).status).toBe(404);
     expect(await auditCount('PICKUP_LOCATION_DELETE')).toBe(1);
+  });
+
+  it('điểm nhận đã có đơn: không đổi được tên / toà nhà (đơn cũ không bị chuyển sang nơi khác), vẫn sửa hướng dẫn và bật / tắt được', async () => {
+    const { adminAgent, placeOrder, pickup, studentAgent } = await setup();
+    await prisma.campusPickupLocation.update({ where: { id: pickup.id }, data: { name: 'Căn tin cơ sở B', building: 'Cơ sở B' } });
+
+    // Chưa có đơn: đổi tên thoải mái
+    expect((await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở B', building: 'Cơ sở B' })).status).toBe(200);
+
+    const orderId = await placeOrder();
+    const renamed = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở A' });
+    expect(renamed.status).toBe(422);
+    expect(renamed.body.error.message).toContain('Hãy tắt điểm nhận này và tạo điểm nhận mới');
+    expect(renamed.body.error.details).toEqual([{ field: 'name', message: expect.stringContaining('không đổi được tên / toà nhà') }]);
+    const moved = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ building: 'Cơ sở A' });
+    expect(moved.status).toBe(422);
+    expect(moved.body.error.details.map((d: { field: string }) => d.field)).toEqual(['building']);
+
+    // Form gửi lại nguyên tên / toà cũ kèm hướng dẫn mới → được; tắt điểm nhận → được
+    const ok = await adminAgent.patch(`${API}/admin/pickup-locations/${pickup.id}`).send({ name: 'Căn tin cơ sở B', building: 'Cơ sở B', description: 'Cạnh thang máy', isActive: false });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.location).toMatchObject({ name: 'Căn tin cơ sở B', building: 'Cơ sở B', description: 'Cạnh thang máy', isActive: false });
+
+    // Sinh viên vẫn thấy đúng nơi đã chọn
+    const order = (await studentAgent.get(`${API}/orders/${orderId}`)).body.data.order;
+    expect(order.pickupLocation).toMatchObject({ name: 'Căn tin cơ sở B', building: 'Cơ sở B' });
   });
 });
 

@@ -181,6 +181,33 @@ describe('Đặt món (POST /orders)', () => {
     expect(await prisma.order.count({ where: { studentId: student.id } })).toBe(1);
   });
 
+  it('gửi lại cùng idempotencyKey nhưng đổi điểm nhận / cách thanh toán → 409, không lặng lẽ trả đơn ở nơi cũ', async () => {
+    const { agent, rice, pickup, student } = await setup();
+    const pickupB = await prisma.campusPickupLocation.create({ data: { name: 'Căn tin cơ sở B' } });
+    await agent.post(`${API}/cart/items`).send({ menuItemId: rice.id });
+    const key = newKey();
+    const first = await agent.post(`${API}/orders`).send({ pickupLocationId: pickupB.id, idempotencyKey: key });
+    expect(first.status).toBe(201);
+
+    // Mạng chập chờn: sinh viên không thấy kết quả, đổi sang điểm nhận khác rồi bấm lại
+    await agent.post(`${API}/cart/items`).send({ menuItemId: rice.id });
+    const changed = await agent.post(`${API}/orders`).send({ pickupLocationId: pickup.id, idempotencyKey: key });
+    expect(changed.status).toBe(409);
+    expect(changed.body.error.code).toBe('ORDER_ALREADY_PLACED');
+    expect(changed.body.error.message).toContain(`Đơn ${first.body.data.order.orderNumber} đã được đặt trước đó (nhận tại "Căn tin cơ sở B")`);
+    expect(changed.body.error.details).toEqual([expect.objectContaining({ field: 'pickupLocationId', orderId: first.body.data.order.id })]);
+
+    const payChanged = await agent.post(`${API}/orders`).send({ pickupLocationId: pickupB.id, paymentMethod: 'VIETQR', idempotencyKey: key });
+    expect(payChanged.status).toBe(409);
+    expect(payChanged.body.error.details[0].field).toBe('paymentMethod');
+
+    // Gửi lại đúng yêu cầu cũ → vẫn trả đơn cũ như trước; chỉ có 1 đơn, đúng nơi đã chọn
+    const same = await agent.post(`${API}/orders`).send({ pickupLocationId: pickupB.id, idempotencyKey: key });
+    expect(same.status).toBe(200);
+    expect(same.body.data.order.pickupLocation.name).toBe('Căn tin cơ sở B');
+    expect(await prisma.order.findMany({ where: { studentId: student.id }, select: { pickupLocationId: true } })).toEqual([{ pickupLocationId: pickupB.id }]);
+  });
+
   it('hai lần checkout đồng thời với KHÁC idempotencyKey vẫn chỉ tạo một đơn (khoá giỏ hàng)', async () => {
     const { agent, rice, pickup, student } = await setup();
     await agent.post(`${API}/cart/items`).send({ menuItemId: rice.id });

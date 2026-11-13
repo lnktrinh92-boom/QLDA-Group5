@@ -121,6 +121,18 @@ adminUsersRouter.patch('/:id', async (req, res) => {
       if (activeAdmins.length <= 1) throw AppError.unprocessable('Hệ thống phải còn ít nhất một quản trị viên đang hoạt động');
     }
 
+    // Chủ quầy phải chuyển quyền cho người khác trước khi đổi sang vai trò khác,
+    // nếu không quầy sẽ bị bỏ trống chủ (vi phạm quy tắc mỗi quầy đúng 1 chủ quầy)
+    if (roleChanged && input.role !== 'VENDOR') {
+      const owned = await tx.vendorMembership.findMany({ where: { userId: id, role: 'OWNER' }, select: { stall: { select: { name: true } } } });
+      if (owned.length > 0) {
+        const names = owned.map((m) => `"${m.stall.name}"`).join(', ');
+        throw AppError.unprocessable(`${before.fullName} đang là chủ quầy ${names}. Hãy chuyển quyền chủ quầy cho người khác (Quầy ăn → Nhân sự) trước khi đổi vai trò.`, [
+          { field: 'role', message: `Đang là chủ quầy ${names}, cần chuyển quyền trước` },
+        ]);
+      }
+    }
+
     const updated = await tx.user.update({
       where: { id },
       data: {

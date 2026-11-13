@@ -11,6 +11,8 @@ import { ErrorState, Spinner } from '@/components/ui/States';
 import { inputClass } from '@/components/ui/styles';
 import { cartKeys, useCart } from '@/features/cart/hooks';
 import { orderKeys, ordersService } from '@/services/orders.service';
+import { toast } from 'sonner';
+import { toApiError } from '@/lib/api-client';
 import { applyServerErrors } from '@/lib/form-errors';
 import { cn, formatCurrency, formatTime } from '@/lib/utils';
 
@@ -56,6 +58,14 @@ export function CheckoutPage() {
       navigate(`/don-hang/${order.id}?moi=1`, { replace: true });
     },
     onError: (error) => {
+      const apiError = toApiError(error);
+      // Đơn đã được tạo ở lần gửi trước (vd mạng chập chờn) nhưng nay chọn khác điểm nhận / giờ / cách trả:
+      // báo rõ và mở được đơn đã đặt, không để sinh viên tưởng đã đặt ở nơi mới
+      if (apiError.code === 'ORDER_ALREADY_PLACED') {
+        const orderId = (apiError.details as { orderId?: number }[] | undefined)?.[0]?.orderId;
+        queryClient.invalidateQueries({ queryKey: orderKeys.all });
+        if (orderId) toast.error(apiError.message, { action: { label: 'Xem đơn', onClick: () => navigate(`/don-hang/${orderId}`) } });
+      }
       applyServerErrors(error, setError, ['pickupLocationId', 'pickupTime', 'paymentMethod']);
       // Giá / tình trạng món có thể đã đổi → tải lại giỏ để hiện cảnh báo mới nhất
       queryClient.invalidateQueries({ queryKey: cartKeys.cart });
