@@ -1,3 +1,5 @@
+// Câu báo lỗi kiểm tra dữ liệu mặc định bằng tiếng Việt (phải nạp trước mọi schema)
+import './config/zod-vi.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';

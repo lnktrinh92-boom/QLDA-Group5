@@ -125,6 +125,9 @@ function EditUserForm({ user, isSelf, onDone }: { user: User; isSelf: boolean; o
     onError: (e) => applyServerErrors(e, setError, ['fullName', 'phone', 'studentCode', 'role', 'status']),
   });
   const [role, status] = useWatch({ control, name: ['role', 'status'] });
+  // Chủ quầy phải chuyển quyền cho người khác trước khi đổi vai trò, nếu không quầy sẽ mất chủ
+  const ownedStalls = user.stalls.filter((s) => s.role === 'OWNER');
+  const blockedByOwnership = ownedStalls.length > 0 && role !== 'VENDOR';
 
   return (
     <form noValidate className="space-y-4 p-6 pt-4" onSubmit={handleSubmit((v) => update.mutate(v))}>
@@ -142,14 +145,19 @@ function EditUserForm({ user, isSelf, onDone }: { user: User; isSelf: boolean; o
       {(role !== user.role || status !== user.status) && (
         <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
           Đổi vai trò hoặc trạng thái sẽ đăng xuất người dùng khỏi mọi thiết bị.
-          {user.role === 'VENDOR' && role !== 'VENDOR' && ' Người dùng cũng sẽ bị gỡ khỏi các quầy đang quản lý.'}
+          {user.role === 'VENDOR' && role !== 'VENDOR' && !blockedByOwnership && ' Người dùng cũng sẽ bị gỡ khỏi các quầy đang quản lý.'}
+        </p>
+      )}
+      {blockedByOwnership && (
+        <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
+          {user.fullName} đang là chủ quầy {ownedStalls.map((s) => `"${s.name}"`).join(', ')}. Hãy chuyển quyền chủ quầy cho người khác (Quầy ăn → Nhân sự) trước khi đổi vai trò.
         </p>
       )}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="outline" onClick={onDone}>
           Huỷ
         </Button>
-        <Button type="submit" loading={update.isPending} disabled={!isDirty}>
+        <Button type="submit" loading={update.isPending} disabled={!isDirty || blockedByOwnership}>
           Lưu thay đổi
         </Button>
       </div>
