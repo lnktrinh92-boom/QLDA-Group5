@@ -14,8 +14,6 @@ import { createMenuItemSchema, updateMenuItemSchema } from '../modules/vendor/ve
 import { updateOrderStatusSchema } from '../modules/vendor/vendor-orders.service.js';
 import { vendorUpdateStallSchema } from '../modules/vendor/vendor.routes.js';
 import { createUserSchema, updateUserSchema } from '../modules/admin/admin-users.routes.js';
-import { createStallSchema, stallMemberSchema, updateStallSchema } from '../modules/admin/admin-stalls.routes.js';
-import { categorySchema, pickupSchema } from '../modules/admin/admin-catalog.routes.js';
 
 type Json = Record<string, unknown>;
 
@@ -405,31 +403,6 @@ export const openApiSpec = {
     '/admin/users/{id}/reset-password': {
       post: op({ tag: 'Quản trị', summary: 'Đặt lại mật khẩu', params: [path('id', 'ID người dùng')], body: { type: 'object', required: ['newPassword'], properties: { newPassword: { type: 'string', minLength: 8, maxLength: 72 } } } }),
     },
-    '/admin/stalls': {
-      get: op({ tag: 'Quản trị', summary: 'Danh sách quầy (kể cả đã tắt)', params: [query('q', 'Tên / vị trí')] }),
-      post: op({ tag: 'Quản trị', summary: 'Tạo quầy (slug tự sinh nếu bỏ trống)', body: createStallSchema, status: 201 }),
-    },
-    '/admin/stalls/{id}': { patch: op({ tag: 'Quản trị', summary: 'Sửa / bật tắt quầy', params: [path('id', 'ID quầy')], body: updateStallSchema }) },
-    '/admin/stalls/{id}/members': {
-      post: op({ tag: 'Quản trị', summary: 'Gán nhân sự (người dùng vai trò VENDOR)', params: [path('id', 'ID quầy')], body: stallMemberSchema, status: 201, errors: { 409: err('Đã thuộc quầy'), 422: err('Người dùng không phải VENDOR') } }),
-    },
-    '/admin/stalls/{id}/members/{userId}': {
-      patch: op({ tag: 'Quản trị', summary: 'Đổi vai trò nhân sự', params: [path('id', 'ID quầy'), path('userId', 'ID người dùng')], body: { type: 'object', required: ['role'], properties: { role: { type: 'string', enum: ['OWNER', 'STAFF'] } } } }),
-      delete: op({ tag: 'Quản trị', summary: 'Gỡ nhân sự khỏi quầy', params: [path('id', 'ID quầy'), path('userId', 'ID người dùng')] }),
-    },
-    '/admin/categories': {
-      get: op({ tag: 'Quản trị', summary: 'Tất cả danh mục' }),
-      post: op({ tag: 'Quản trị', summary: 'Tạo danh mục', body: categorySchema, status: 201, errors: { 409: err('Trùng tên') } }),
-    },
-    '/admin/categories/{id}': {
-      patch: op({ tag: 'Quản trị', summary: 'Sửa danh mục', params: [path('id', 'ID danh mục')], body: categorySchema.partial() }),
-      delete: op({ tag: 'Quản trị', summary: 'Xoá danh mục chưa có món', params: [path('id', 'ID danh mục')], errors: { 422: err('Danh mục còn món') } }),
-    },
-    '/admin/pickup-locations': {
-      get: op({ tag: 'Quản trị', summary: 'Tất cả điểm nhận' }),
-      post: op({ tag: 'Quản trị', summary: 'Tạo điểm nhận', body: pickupSchema, status: 201 }),
-    },
-    '/admin/pickup-locations/{id}': { patch: op({ tag: 'Quản trị', summary: 'Sửa / bật tắt điểm nhận', params: [path('id', 'ID điểm nhận')], body: pickupSchema.partial() }) },
     '/admin/orders': {
       get: op({ tag: 'Quản trị', summary: 'Đơn toàn hệ thống', params: [query('status', 'Trạng thái', ORDER_STATUS), query('stallId', 'ID quầy', { type: 'integer' }), query('q', 'Mã đơn / sinh viên'), ...dateParams, ...pageParams], response: paged(ref('Order')) }),
     },
