@@ -26,6 +26,12 @@ describe('máy trạng thái đơn hàng', () => {
     expect(findTransition('PENDING', 'REJECTED', 'STALL_STAFF')?.requiresReason).toBe(true);
   });
 
+  it('huỷ đơn chờ xác nhận: sinh viên tự huỷ không cần lý do, admin huỷ bắt buộc lý do', () => {
+    expect(findTransition('PENDING', 'CANCELLED', 'STUDENT_OWNER')?.requiresReason).toBeFalsy();
+    expect(findTransition('PENDING', 'CANCELLED', 'ADMIN')?.requiresReason).toBe(true);
+    expect(allowedNextStatuses('PENDING', 'ADMIN')).toEqual(['ACCEPTED', 'REJECTED', 'CANCELLED']);
+  });
+
   it('xác định vai trò thực hiện', () => {
     expect(actorForRole('STUDENT', true, false)).toBe('STUDENT_OWNER');
     expect(actorForRole('STUDENT', false, false)).toBeNull();

@@ -23,7 +23,9 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, Transition[]> = {
   PENDING: [
     { to: 'ACCEPTED', actors: ['STALL_STAFF', 'ADMIN'] },
     { to: 'REJECTED', actors: ['STALL_STAFF', 'ADMIN'], requiresReason: true },
-    { to: 'CANCELLED', actors: ['STUDENT_OWNER', 'ADMIN'] },
+    { to: 'CANCELLED', actors: ['STUDENT_OWNER'] },
+    // Admin huỷ đơn của sinh viên: bắt buộc lý do để sinh viên biết vì sao
+    { to: 'CANCELLED', actors: ['ADMIN'], requiresReason: true },
   ],
   ACCEPTED: [
     { to: 'PREPARING', actors: ['STALL_STAFF', 'ADMIN'] },

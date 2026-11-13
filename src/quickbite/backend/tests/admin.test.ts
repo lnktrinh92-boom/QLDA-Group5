@@ -324,6 +324,38 @@ describe('Đơn hàng toàn hệ thống', () => {
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.data.order).toMatchObject({ status: 'CANCELLED', paymentStatus: 'VOIDED', cancelReason: 'Quầy mất điện' });
     expect(await auditCount('ORDER_STATUS_CHANGE')).toBe(1);
+    // Nhật ký lưu cả trạng thái cũ để tra cứu "từ đâu sang đâu"
+    expect(await prisma.auditLog.findFirstOrThrow({ where: { action: 'ORDER_STATUS_CHANGE' } })).toMatchObject({
+      entityType: 'Order',
+      entityId: String(orderId),
+      metadata: { from: 'PENDING', to: 'CANCELLED', reason: 'Quầy mất điện' },
+    });
+  });
+
+  it('admin huỷ đơn bắt buộc lý do (sinh viên tự huỷ thì không cần); ngày không tồn tại → 400', async () => {
+    const { adminAgent, studentAgent, placeOrder, stall } = await setup();
+    const orderId = await placeOrder();
+
+    const noReason = await adminAgent.patch(`${API}/admin/orders/${orderId}/status`).send({ status: 'CANCELLED', reason: '   ' });
+    expect(noReason.status).toBe(400);
+    expect(noReason.body.error.details).toEqual([{ field: 'reason', message: 'Vui lòng nhập lý do' }]);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('PENDING');
+    expect(await auditCount('ORDER_STATUS_CHANGE')).toBe(0);
+    expect((await studentAgent.post(`${API}/orders/${orderId}/cancel`).send({})).status).toBe(200);
+
+    // Ngày không tồn tại không bị âm thầm đổi sang ngày khác, cũng không gây lỗi 500
+    const vendorAgent = await loginAs('vendor@test.local');
+    const cases = [
+      [adminAgent, '/admin/orders?from=2026-13-40'],
+      [adminAgent, '/admin/orders?to=2026-02-30'],
+      [vendorAgent, `/vendor/stalls/${stall.id}/orders?from=2026-11-31`],
+      [vendorAgent, `/vendor/stalls/${stall.id}/reports?from=2026-02-30&to=2026-03-01`],
+    ] as const;
+    for (const [agent, url] of cases) {
+      const res = await agent.get(`${API}${url}`);
+      expect(res.status, url).toBe(400);
+      expect(res.body.error.details[0].message, url).toBe('Ngày không tồn tại');
+    }
   });
 });
 
@@ -396,5 +428,27 @@ describe('Nhật ký quản trị', () => {
     expect(filtered.body.data).toHaveLength(1);
     expect(filtered.body.data[0]).toMatchObject({ action: 'CATEGORY_CREATE', entityType: 'FoodCategory', actor: { email: 'admin@test.local' } });
     expect((await adminAgent.get(`${API}/admin/audit-logs?action=XOA_HET`)).status).toBe(400);
+  });
+
+  it('lọc được nhật ký SEED_DATABASE; phân trang không trùng / sót khi nhiều bản ghi trùng thời điểm', async () => {
+    const { adminAgent, placeOrder } = await setup();
+    const sameTime = new Date('2026-11-01T03:00:00Z');
+    await prisma.auditLog.createMany({
+      data: ['SEED_DATABASE', 'CATEGORY_CREATE', 'CATEGORY_CREATE'].map((action) => ({ action, entityType: 'System', createdAt: sameTime })),
+    });
+    const seed = await adminAgent.get(`${API}/admin/audit-logs?action=SEED_DATABASE`);
+    expect(seed.status).toBe(200);
+    expect(seed.body.meta.total).toBe(1);
+
+    const pagedIds = async (path: string, pages: number) => {
+      const ids: number[] = [];
+      for (let page = 1; page <= pages; page++) ids.push(...(await adminAgent.get(`${API}${path}&page=${page}`)).body.data.map((x: { id: number }) => x.id));
+      return ids;
+    };
+    expect(new Set(await pagedIds('/admin/audit-logs?pageSize=1', 3)).size).toBe(3);
+
+    const orders = [await placeOrder(), await placeOrder(), await placeOrder()];
+    await prisma.order.updateMany({ where: { id: { in: orders } }, data: { createdAt: sameTime } });
+    expect((await pagedIds('/admin/orders?pageSize=1', 3)).sort()).toEqual([...orders].sort());
   });
 });
