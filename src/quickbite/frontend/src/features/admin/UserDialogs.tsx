@@ -1,13 +1,16 @@
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Dialog } from '@/components/ui/Dialog';
 import { FormField, PasswordField } from '@/components/ui/FormField';
 import { SelectField } from '@/components/ui/SelectField';
 import { ROLE_LABELS, STATUS_LABELS, type AccountStatus, type Role, type User } from '@/features/auth/types';
+import { toApiError } from '@/lib/api-client';
 import { applyServerErrors } from '@/lib/form-errors';
 import { adminKeys, adminService } from '@/services/admin.service';
 
@@ -128,9 +131,12 @@ function EditUserForm({ user, isSelf, onDone }: { user: User; isSelf: boolean; o
   // Chủ quầy phải chuyển quyền cho người khác trước khi đổi vai trò, nếu không quầy sẽ mất chủ
   const ownedStalls = user.stalls.filter((s) => s.role === 'OWNER');
   const blockedByOwnership = ownedStalls.length > 0 && role !== 'VENDOR';
+  // Khoá / ngừng hoạt động tài khoản: hỏi xác nhận trước khi lưu
+  const [pending, setPending] = useState<EditValues | null>(null);
+  const submit = (v: EditValues) => (v.status !== user.status && v.status !== 'ACTIVE' ? setPending(v) : update.mutate(v));
 
   return (
-    <form noValidate className="space-y-4 p-6 pt-4" onSubmit={handleSubmit((v) => update.mutate(v))}>
+    <form noValidate className="space-y-4 p-6 pt-4" onSubmit={handleSubmit(submit)}>
       <p className="text-sm text-navy-500">{user.email}</p>
       <FormField label="Họ và tên" required error={errors.fullName?.message} {...register('fullName')} />
       <div className="grid gap-4 sm:grid-cols-2">
@@ -161,7 +167,61 @@ function EditUserForm({ user, isSelf, onDone }: { user: User; isSelf: boolean; o
           Lưu thay đổi
         </Button>
       </div>
+      <ConfirmDialog
+        open={pending !== null}
+        tone="danger"
+        title={`${pending?.status === 'SUSPENDED' ? 'Khoá' : 'Ngừng hoạt động'} tài khoản ${user.fullName}?`}
+        description={lockWarning(user)}
+        confirmLabel={pending?.status === 'SUSPENDED' ? 'Khoá tài khoản' : 'Ngừng hoạt động'}
+        cancelLabel="Quay lại"
+        loading={update.isPending}
+        onCancel={() => setPending(null)}
+        onConfirm={() => pending && update.mutate(pending, { onSettled: () => setPending(null) })}
+      />
     </form>
+  );
+}
+
+/** Hậu quả khi khoá tài khoản, hiện trong hộp thoại xác nhận */
+function lockWarning(user: User) {
+  return (
+    <>
+      <span className="font-medium">{user.email}</span> sẽ bị đăng xuất khỏi mọi thiết bị và không đăng nhập được cho tới khi được mở khoá.
+      {user.stalls.length > 0 && ` Đang quản lý quầy: ${user.stalls.map((s) => s.name).join(', ')}.`}
+    </>
+  );
+}
+
+// ─────────── Khoá / mở khoá nhanh từ bảng ───────────
+/** Luôn hỏi xác nhận trước khi khoá (hoặc mở khoá) tài khoản */
+export function LockUserDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
+  const invalidate = useInvalidateUsers();
+  const locking = user?.status !== 'SUSPENDED';
+  const toggle = useMutation({
+    mutationFn: (u: User) => adminService.updateUser(u.id, { status: u.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED' }),
+    onSuccess: (updated) => {
+      invalidate();
+      toast.success(updated.status === 'SUSPENDED' ? `Đã khoá tài khoản ${updated.email}` : `Đã mở khoá tài khoản ${updated.email}`);
+      onClose();
+    },
+    onError: (e) => {
+      toast.error(toApiError(e).message);
+      onClose();
+    },
+  });
+
+  return (
+    <ConfirmDialog
+      open={user !== null}
+      tone={locking ? 'danger' : 'primary'}
+      title={user ? `${locking ? 'Khoá' : 'Mở khoá'} tài khoản ${user.fullName}?` : ''}
+      description={user && (locking ? lockWarning(user) : <><span className="font-medium">{user.email}</span> sẽ đăng nhập và sử dụng lại được bình thường.</>)}
+      confirmLabel={locking ? 'Khoá tài khoản' : 'Mở khoá'}
+      cancelLabel="Quay lại"
+      loading={toggle.isPending}
+      onCancel={onClose}
+      onConfirm={() => user && toggle.mutate(user)}
+    />
   );
 }
 

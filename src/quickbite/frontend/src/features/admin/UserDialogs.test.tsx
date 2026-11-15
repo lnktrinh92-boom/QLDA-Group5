@@ -58,3 +58,39 @@ describe('Sửa người dùng: đổi vai trò chủ quầy', () => {
     expect(screen.getByLabelText('Vai trò')).toHaveAttribute('aria-invalid', 'true');
   });
 });
+
+describe('Sửa người dùng: khoá tài khoản phải xác nhận', () => {
+  it('đổi trạng thái sang "Bị khoá" rồi bấm Lưu → hỏi xác nhận trước, chưa gọi API', async () => {
+    withQueryClient(<EditUserDialog user={makeUser({ id: 8, fullName: 'Trần Thị Bình' })} isSelf={false} onClose={vi.fn()} />);
+    await userEvent.selectOptions(screen.getByLabelText('Trạng thái'), 'SUSPENDED');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Khoá tài khoản Trần Thị Bình?' })).toHaveTextContent('đăng xuất khỏi mọi thiết bị');
+    expect(adminService.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('xác nhận → lưu trạng thái SUSPENDED; "Quay lại" → không lưu', async () => {
+    vi.mocked(adminService.updateUser).mockResolvedValueOnce(makeUser({ status: 'SUSPENDED' }));
+    withQueryClient(<EditUserDialog user={makeUser({ id: 8, fullName: 'Trần Thị Bình' })} isSelf={false} onClose={vi.fn()} />);
+    await userEvent.selectOptions(screen.getByLabelText('Trạng thái'), 'SUSPENDED');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Quay lại' }));
+    expect(adminService.updateUser).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Khoá tài khoản' }));
+    await waitFor(() => expect(adminService.updateUser).toHaveBeenCalledWith(8, expect.objectContaining({ status: 'SUSPENDED' })));
+  });
+
+  it('chỉ đổi thông tin khác (không khoá) → lưu ngay, không hỏi', async () => {
+    vi.mocked(adminService.updateUser).mockResolvedValueOnce(makeUser());
+    withQueryClient(<EditUserDialog user={makeUser({ id: 8 })} isSelf={false} onClose={vi.fn()} />);
+    await userEvent.clear(screen.getByLabelText(/Họ và tên/));
+    await userEvent.type(screen.getByLabelText(/Họ và tên/), 'Tên Mới');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+    await waitFor(() => expect(adminService.updateUser).toHaveBeenCalledWith(8, expect.objectContaining({ fullName: 'Tên Mới' })));
+    expect(screen.queryByRole('dialog', { name: /Khoá tài khoản/ })).not.toBeInTheDocument();
+  });
+});

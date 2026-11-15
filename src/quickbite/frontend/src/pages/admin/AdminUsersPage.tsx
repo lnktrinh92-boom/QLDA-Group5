@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { KeyRound, Pencil, Plus, Search } from 'lucide-react';
+import { KeyRound, Lock, LockOpen, Pencil, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Pagination } from '@/components/ui/Pagination';
 import { ErrorState } from '@/components/ui/States';
 import { inputClass } from '@/components/ui/styles';
 import { PageHeader } from '@/features/admin/PageHeader';
-import { CreateUserDialog, EditUserDialog, ResetPasswordDialog } from '@/features/admin/UserDialogs';
+import { CreateUserDialog, EditUserDialog, LockUserDialog, ResetPasswordDialog } from '@/features/admin/UserDialogs';
 import { useCurrentUser } from '@/features/auth/hooks';
 import { ROLE_LABELS, STATUS_LABELS, type AccountStatus, type Role, type User } from '@/features/auth/types';
 import { adminKeys, adminService } from '@/services/admin.service';
@@ -29,6 +29,7 @@ export function AdminUsersPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [resetting, setResetting] = useState<User | null>(null);
+  const [locking, setLocking] = useState<User | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -59,14 +60,14 @@ export function AdminUsersPage() {
         </>
       ),
     },
-    { key: 'role', header: 'Vai trò', cell: (u) => ROLE_LABELS[u.role] },
+    { key: 'role', header: 'Vai trò', cell: (u) => <span className="whitespace-nowrap">{ROLE_LABELS[u.role]}</span> },
     { key: 'stalls', header: 'Quầy quản lý', cell: (u) => <span className="text-navy-600">{u.stalls.map((s) => s.name).join(', ') || '—'}</span> },
     {
       key: 'status',
       header: 'Trạng thái',
-      cell: (u) => <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', STATUS_STYLE[u.status])}>{STATUS_LABELS[u.status]}</span>,
+      cell: (u) => <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap', STATUS_STYLE[u.status])}>{STATUS_LABELS[u.status]}</span>,
     },
-    { key: 'created', header: 'Ngày tạo', cell: (u) => <span className="text-navy-500">{formatDate(u.createdAt)}</span> },
+    { key: 'created', header: 'Ngày tạo', cell: (u) => <span className="whitespace-nowrap text-navy-500">{formatDate(u.createdAt)}</span> },
     {
       key: 'actions',
       header: <span className="sr-only">Thao tác</span>,
@@ -79,6 +80,17 @@ export function AdminUsersPage() {
           <Button variant="ghost" size="sm" onClick={() => setResetting(u)} aria-label={`Đặt lại mật khẩu cho ${u.fullName}`}>
             <KeyRound className="size-4" aria-hidden />
           </Button>
+          {/* Không tự khoá chính mình (server cũng chặn) */}
+          {u.id !== me?.id &&
+            (u.status === 'SUSPENDED' ? (
+              <Button variant="ghost" size="sm" className="text-green-700 hover:bg-green-50" onClick={() => setLocking(u)} aria-label={`Mở khoá tài khoản ${u.fullName}`} title="Mở khoá">
+                <LockOpen className="size-4" aria-hidden />
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => setLocking(u)} aria-label={`Khoá tài khoản ${u.fullName}`} title="Khoá tài khoản">
+                <Lock className="size-4" aria-hidden />
+              </Button>
+            ))}
         </div>
       ),
     },
@@ -167,6 +179,7 @@ export function AdminUsersPage() {
       <CreateUserDialog open={creating} onClose={() => setCreating(false)} />
       <EditUserDialog user={editing} isSelf={editing?.id === me?.id} onClose={() => setEditing(null)} />
       <ResetPasswordDialog user={resetting} onClose={() => setResetting(null)} />
+      <LockUserDialog user={locking} onClose={() => setLocking(null)} />
     </div>
   );
 }

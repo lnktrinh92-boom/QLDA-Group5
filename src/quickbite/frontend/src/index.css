@@ -48,4 +48,9 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-brand-500;
   }
+  /* Ẩn nút hiện mật khẩu / xoá chữ có sẵn của Edge, tránh trùng với nút con mắt của PasswordField */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
 }
