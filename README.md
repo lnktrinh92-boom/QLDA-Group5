@@ -9,7 +9,7 @@
 ## 1. Giới thiệu tổng quan
 **QuickBite** là giải pháp Web Application hỗ trợ đặt món trước (Pre-order) và quản lý luồng đơn hàng trực tuyến dành riêng cho khu vực căn tin tại các cơ sở Đại học Kinh tế TP. Hồ Chí Minh (UEH). Hệ thống giúp giải quyết tình trạng ùn tắc giờ cao điểm, cắt giảm thời gian chờ đợi của sinh viên từ 15 phút xuống dưới 3 phút và số hóa quy trình bán hàng cho quầy căn tin.
 
-**Trạng thái:** đã phát hành **v1.0.0** (19/11/2026), đang chạy production và UAT Sprint 7.
+**Trạng thái:** đã phát hành **v1.0.1** (24/11/2026: sửa lỗi UAT Sprint 7), đang chạy production. Bản đầu tiên v1.0.0 phát hành 19/11/2026.
 
 ## 2. Thành viên nhóm & Phân vai
 | STT | Họ và Tên | MSSV | Vai trò chính |
@@ -20,7 +20,7 @@
 | 4 | **Đặng Xuân Huy** | 35254020075 | Developer |
 | 5 | **Lê Nguyễn Khánh Trình** | 31241026087 | QA / Documentation |
 
-## 3. Sản phẩm (v1.0.0)
+## 3. Sản phẩm (v1.0.1)
 
 | | Địa chỉ |
 |---|---|
@@ -90,5 +90,5 @@ npm run dev                   # Giao diện: http://localhost:5173
 | [payments.md](src/quickbite/docs/payments.md) | Chuyển khoản VietQR, webhook SePay |
 | [security.md](src/quickbite/docs/security.md) | Biện pháp bảo mật, kết quả rà soát |
 | [deployment.md](src/quickbite/docs/deployment.md) | Triển khai production, sao lưu & khôi phục database |
-| [release-v1.0.md](src/quickbite/docs/release-v1.0.md) | Bản phát hành v1.0.0, quy trình triển khai & smoke test |
+| [release-v1.0.md](src/quickbite/docs/release-v1.0.md) | Lịch sử phiên bản v1.0.x, quy trình triển khai & smoke test |
 | [cong-nghe.md](src/quickbite/docs/cong-nghe.md) | Công nghệ & phiên bản |

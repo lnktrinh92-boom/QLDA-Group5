@@ -3,7 +3,7 @@
 QuickBite giúp sinh viên xem các quầy ăn trong khuôn viên trường, đặt món online, chọn điểm và giờ nhận,
 rồi trả tiền mặt khi nhận hoặc chuyển khoản VietQR. Chủ quầy nhận và xử lý đơn theo thời gian thực; quản trị viên quản lý toàn hệ thống.
 
-## 🌐 Bản đang chạy — v1.0.0
+## 🌐 Bản đang chạy — v1.0.1
 
 | | Địa chỉ |
 |---|---|
@@ -91,7 +91,7 @@ flowchart LR
 | [docs/business-rules.md](docs/business-rules.md) | Máy trạng thái đơn, thanh toán, huỷ / từ chối / hoàn tiền, giờ nhận, giỏ hàng, quyền trong quầy, kiểm duyệt đánh giá |
 | [docs/security.md](docs/security.md) | Biện pháp bảo mật, kết quả rà soát, giới hạn đã biết |
 | [docs/deployment.md](docs/deployment.md) | Triển khai production (nginx / PM2 hoặc Vercel + Aiven), biến môi trường, **sao lưu & khôi phục**, quy trình khôi phục sự cố |
-| [docs/release-v1.0.md](docs/release-v1.0.md) | Bản phát hành v1.0.0: nội dung, URL production, quy trình triển khai & quay lại, smoke test |
+| [docs/release-v1.0.md](docs/release-v1.0.md) | Bản phát hành v1.0.x (lịch sử phiên bản), URL production, quy trình triển khai & quay lại, smoke test |
 | [docs/cong-nghe.md](docs/cong-nghe.md) | Công nghệ & phiên bản thư viện đang dùng |
 | [docs/openapi.json](docs/openapi.json) | Tài liệu API dạng tĩnh (OpenAPI 3.1), xem không cần chạy server |
 
@@ -311,6 +311,7 @@ Test backend chạy trên database riêng (`.env.test`) và **từ chối chạy
 - [x] **Phase 6** — Dashboard quản trị, người dùng, quầy & nhân sự, danh mục, điểm nhận, đơn toàn hệ thống, kiểm duyệt, nhật ký; đánh giá của sinh viên
 - [x] **Phase 7** — Swagger/OpenAPI (đối chiếu 2 chiều với code), rà soát bảo mật & sửa lỗi, `npm audit` 0 lỗ hổng, cài đặt mới từ đầu theo README, kiểm tra responsive, tài liệu
 - [x] **Release v1.0.0** — sao lưu / khôi phục database, kiểm tra cấu hình production, triển khai Vercel + Aiven, smoke test đạt
+- [x] **Release v1.0.1** — sửa 4 lỗi UAT (tải ảnh khi mạng yếu, bộ lọc trên điện thoại, nút "Nhận đơn", xác nhận lưu thông tin quầy), Swagger & tài liệu kỹ thuật
 
 | Tiêu chí | Kết quả |
 |---|---|

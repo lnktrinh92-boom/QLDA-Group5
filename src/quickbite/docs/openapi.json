@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "QuickBite API",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "API đặt món ăn trong khuôn viên trường đại học.\n\n**Xác thực:** gọi `POST /auth/login` → server đặt cookie `qb_session` (httpOnly). Trình duyệt tự gửi cookie ở các request sau.\nTrong Swagger UI, hãy đăng nhập bằng \"Try it out\" ở `POST /auth/login` trước khi thử các API cần đăng nhập.\n\n**Định dạng phản hồi:** `{ success: true, data, meta? }` hoặc `{ success: false, error: { code, message, details? } }`.\n\n**Tiền tệ:** VND, trả về dạng chuỗi số nguyên. **Thời gian:** ISO 8601 (UTC); ngày lọc báo cáo theo giờ Việt Nam."
   },
   "servers": [

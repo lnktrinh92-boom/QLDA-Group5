@@ -98,7 +98,7 @@ export const openApiSpec = {
   openapi: '3.1.0',
   info: {
     title: 'QuickBite API',
-    version: '1.0.0',
+    version: '1.0.1',
     description: [
       'API đặt món ăn trong khuôn viên trường đại học.',
       '',

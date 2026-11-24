@@ -1,4 +1,14 @@
-# QuickBite v1.0.0 — Phát hành & triển khai production
+# QuickBite v1.0.x — Phát hành & triển khai production
+
+## Lịch sử phiên bản
+
+| Phiên bản | Ngày | Nội dung |
+|---|---|---|
+| **v1.0.1** | 24/11/2026 | **Sửa 4 lỗi UAT** (SCRUM-124): ảnh món có khung chờ khi mạng yếu, báo "Đang tải món...", tải sẵn trang kế; bộ lọc trên điện thoại dạng bảng trượt + chip; nút "Nhận đơn" cao 44px; xác nhận "Đã lưu lúc HH:mm" khi lưu thông tin quầy. **Vận hành:** sao lưu / khôi phục database, `npm run prod:check` (SCRUM-122); `npm run smoke`, cấu hình Vercel trong repo (SCRUM-142). **Tài liệu:** Swagger mô tả đủ API chính + `docs/openapi.json` (SCRUM-121); README & tài liệu kỹ thuật (SCRUM-125). Không có migration mới. PR #31–#35 |
+| **v1.0.0** | 19/11/2026 | Bản chốt cho UAT Sprint 7 (chi tiết bên dưới) |
+
+> Các mục dưới đây mô tả bản v1.0.0. Triển khai v1.0.1 làm theo đúng quy trình ở mục 2, thay số phiên bản (`v1.0.1`, `--version=1.0.1`). v1.0.1 không có migration mới nên bước 4 không thay đổi gì trong database.
+
 
 | Mục | Nội dung |
 |---|---|
