@@ -13,6 +13,7 @@ import { useVendorStall } from '@/features/vendor/vendor-stall-context';
 import { toApiError } from '@/lib/api-client';
 import { vendorKeys, vendorService } from '@/services/vendor.service';
 import { cn } from '@/lib/utils';
+import type { VendorStall } from '@/types/vendor';
 
 const NAV = [
   { to: '/quan-ly', label: 'Tổng quan', icon: LayoutDashboard, end: true },
@@ -22,6 +23,37 @@ const NAV = [
   { to: '/quan-ly/thong-bao', label: 'Thông báo', icon: Bell, badge: 'notifications' },
   { to: '/quan-ly/thong-tin-quay', label: 'Thông tin quầy', icon: Settings },
 ];
+
+/**
+ * Dòng trạng thái dưới công tắc "Nhận đơn mới": nói rõ sinh viên có đặt được hay không.
+ * Công tắc chỉ là lựa chọn của quầy; ngoài giờ mở cửa thì dù bật, sinh viên vẫn chưa đặt được
+ * (Design QA UI-03, ACC-04, VN-08: không chỉ dựa vào màu công tắc).
+ */
+export function AcceptingOrdersStatus({ stall }: { stall: Pick<VendorStall, 'isActive' | 'isAcceptingOrders' | 'isOpenNow' | 'canOrderNow' | 'openTime' | 'closeTime'> }) {
+  let tone: 'ok' | 'warn' | 'off';
+  let text: string;
+  if (!stall.isAcceptingOrders) {
+    tone = 'off';
+    text = 'Đang tắt: sinh viên chưa đặt món được.';
+  } else if (stall.canOrderNow) {
+    tone = 'ok';
+    text = 'Đang bật: sinh viên đang đặt món trực tuyến được.';
+  } else if (!stall.isActive) {
+    tone = 'warn';
+    text = 'Đang bật nhưng quầy đang bị quản trị tạm khoá: sinh viên chưa đặt được.';
+  } else {
+    tone = 'warn';
+    text = `Đang bật nhưng ngoài giờ mở cửa: sinh viên đặt được từ ${stall.openTime} (giờ mở ${stall.openTime} – ${stall.closeTime}).`;
+  }
+  return (
+    <p
+      id="accepting-orders-status"
+      className={cn('mt-1.5 text-xs', tone === 'ok' ? 'text-green-700' : tone === 'warn' ? 'font-medium text-amber-700' : 'text-navy-500')}
+    >
+      {text}
+    </p>
+  );
+}
 
 export function VendorLayout() {
   return (
@@ -104,7 +136,9 @@ function VendorShell() {
               checked={stall.isAcceptingOrders}
               disabled={toggleAccepting.isPending}
               onChange={(value) => toggleAccepting.mutate(value)}
+              describedBy="accepting-orders-status"
             />
+            <AcceptingOrdersStatus stall={stall} />
           </div>
         </div>
 

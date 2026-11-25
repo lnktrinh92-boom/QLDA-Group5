@@ -135,7 +135,7 @@ export function FoodDiscoveryPage() {
             <>
               <div className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3">
                 {data.items.map((item, i) => (
-                  <FoodCard key={item.id} item={item} onSelect={detail.open} priority={i < PRIORITY_IMAGES} />
+                  <FoodCard key={item.id} item={item} onSelect={detail.open} quickAdd={detail.quickAdd} priority={i < PRIORITY_IMAGES} />
                 ))}
               </div>
               {data.meta.totalPages > 1 && (

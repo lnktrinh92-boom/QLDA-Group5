@@ -5,6 +5,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { useAddToCartAction } from '@/features/cart/use-add-to-cart-action';
 import type { MenuItem } from '@/types/models';
 import { FoodDetailContent } from './FoodDetailContent';
+import type { QuickAdd } from './FoodCard';
 
 /**
  * Quản lý hộp thoại chi tiết món cho một trang:
@@ -42,5 +43,10 @@ export function useFoodDetailDialog() {
     </>
   );
 
-  return { open: setItem, close, dialog };
+  // Nút "+" trên thẻ món: thêm 1 phần không ghi chú (Design QA UI-01). Ẩn với tài khoản không được đặt món.
+  const quickAdd: QuickAdd | undefined = cart.blockedReason
+    ? undefined
+    : { onAdd: (menuItem) => cart.handleAdd(menuItem, { quantity: 1, note: '' }), busy: cart.adding };
+
+  return { open: setItem, close, dialog, quickAdd };
 }

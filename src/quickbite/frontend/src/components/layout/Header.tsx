@@ -208,6 +208,8 @@ function UserMenu({ user }: { user: User }) {
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={`Tài khoản: ${user.fullName}`}
+        title={user.fullName}
         className="flex items-center gap-2 rounded-xl py-1 pr-2 pl-1 hover:bg-gray-100"
       >
         <span className="flex size-8 items-center justify-center rounded-full bg-navy-900 text-xs font-bold text-white" aria-hidden>

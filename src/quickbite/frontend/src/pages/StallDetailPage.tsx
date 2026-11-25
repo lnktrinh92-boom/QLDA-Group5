@@ -101,7 +101,7 @@ export function StallDetailPage() {
                     {data.menuItems
                       .filter((m) => m.category.id === c.id)
                       .map((item) => (
-                        <FoodCard key={item.id} item={item} onSelect={detail.open} hideStall />
+                        <FoodCard key={item.id} item={item} onSelect={detail.open} quickAdd={detail.quickAdd} hideStall />
                       ))}
                   </div>
                 </section>
