@@ -8,10 +8,12 @@ interface SwitchProps {
   hideLabel?: boolean;
   disabled?: boolean;
   size?: 'sm' | 'md';
+  /** id của đoạn mô tả trạng thái đi kèm (aria-describedby) */
+  describedBy?: string;
 }
 
 /** Công tắc bật/tắt có vai trò "switch" cho trình đọc màn hình */
-export function Switch({ checked, onChange, label, hideLabel, disabled, size = 'md' }: SwitchProps) {
+export function Switch({ checked, onChange, label, hideLabel, disabled, size = 'md', describedBy }: SwitchProps) {
   return (
     <label className={cn('inline-flex cursor-pointer items-center gap-2.5', disabled && 'cursor-not-allowed opacity-60')}>
       <button
@@ -19,6 +21,7 @@ export function Switch({ checked, onChange, label, hideLabel, disabled, size = '
         role="switch"
         aria-checked={checked}
         aria-label={hideLabel ? label : undefined}
+        aria-describedby={describedBy}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(

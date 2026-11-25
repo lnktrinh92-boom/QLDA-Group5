@@ -1,4 +1,4 @@
-import { Flame, Store } from 'lucide-react';
+import { Flame, Plus, Store } from 'lucide-react';
 import { ImageWithFallback } from '@/components/ui/ImageWithFallback';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { MenuItem } from '@/types/models';
@@ -11,16 +11,28 @@ interface FoodCardProps {
   hideStall?: boolean;
   /** Thẻ ở đầu danh sách (thấy ngay khi mở trang): tải ảnh ngay, ưu tiên cao */
   priority?: boolean;
+  /** Nút "+" thêm nhanh 1 phần vào giỏ (bỏ qua hộp chi tiết). Không truyền → không có nút. */
+  quickAdd?: QuickAdd;
 }
 
-/** Thẻ món ăn. Cả thẻ là một nút để mở chi tiết món. */
-export function FoodCard({ item, onSelect, hideStall, priority }: FoodCardProps) {
+export interface QuickAdd {
+  onAdd: (item: MenuItem) => void;
+  busy?: boolean;
+}
+
+/**
+ * Thẻ món ăn. Cả thẻ là một nút để mở chi tiết món; nút "+" ở góc dưới phải thêm nhanh vào giỏ
+ * (Design QA UI-01). Hai nút đặt cạnh nhau, không lồng nhau.
+ */
+export function FoodCard({ item, onSelect, hideStall, priority, quickAdd }: FoodCardProps) {
   const unavailable = !item.isAvailable;
+  const showQuickAdd = !!quickAdd && item.canOrder;
   return (
+    <div className="group relative h-full transition hover:-translate-y-0.5">
     <button
       type="button"
       onClick={() => onSelect(item)}
-      className="group flex h-full w-full flex-col overflow-hidden rounded-(--radius-card) border border-gray-100 bg-white text-left shadow-(--shadow-card) transition hover:-translate-y-0.5 hover:shadow-(--shadow-card-hover)"
+      className="flex h-full w-full flex-col overflow-hidden rounded-(--radius-card) border border-gray-100 bg-white text-left shadow-(--shadow-card) transition group-hover:shadow-(--shadow-card-hover)"
       aria-label={`${item.name}, ${formatCurrency(item.price)}${unavailable ? ', tạm hết' : ''}`}
     >
       <div className="relative aspect-[4/3] w-full overflow-hidden">
@@ -49,11 +61,24 @@ export function FoodCard({ item, onSelect, hideStall, priority }: FoodCardProps)
             <span className="truncate">{item.stall.name}</span>
           </p>
         )}
-        <p className={cn('mt-auto pt-2 text-lg font-extrabold', unavailable ? 'text-navy-400' : 'text-navy-900')}>
+        <p className={cn('mt-auto pt-2 text-lg font-extrabold', unavailable ? 'text-navy-400' : 'text-navy-900', showQuickAdd && 'pr-11')}>
           {formatCurrency(item.price)}
         </p>
       </div>
     </button>
+    {showQuickAdd && (
+      <button
+        type="button"
+        onClick={() => quickAdd.onAdd(item)}
+        disabled={quickAdd.busy}
+        aria-label={`Thêm nhanh 1 phần ${item.name} vào giỏ`}
+        title="Thêm nhanh vào giỏ"
+        className="absolute right-3 bottom-3 inline-flex size-10 items-center justify-center rounded-full bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-100 transition hover:bg-brand-500 hover:text-white disabled:opacity-60"
+      >
+        <Plus className="size-5" strokeWidth={2.5} aria-hidden />
+      </button>
+    )}
+    </div>
   );
 }
 

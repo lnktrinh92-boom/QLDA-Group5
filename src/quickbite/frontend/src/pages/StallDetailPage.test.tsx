@@ -60,7 +60,7 @@ describe('StallDetailPage (trang quầy)', () => {
   it('món hết hàng có nhãn "Tạm hết"; bấm vào món mở hộp chi tiết', async () => {
     render();
     expect(await screen.findByText('Tạm hết')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Cơm gà bowl sốt mè/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Cơm gà bowl sốt mè,/ }));
     expect(await screen.findByRole('dialog')).toHaveTextContent('Cơm gà bowl sốt mè');
   });
 

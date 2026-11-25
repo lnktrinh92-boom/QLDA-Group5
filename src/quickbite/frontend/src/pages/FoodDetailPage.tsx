@@ -60,7 +60,7 @@ export function FoodDetailPage() {
                 <SectionHeader title={`Món khác của ${data.item.stall.name}`} to={`/quan-an/${data.item.stall.slug}`} linkLabel="Xem cả quầy" />
                 <div className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-4">
                   {data.related.map((item) => (
-                    <FoodCard key={item.id} item={item} onSelect={detail.open} hideStall />
+                    <FoodCard key={item.id} item={item} onSelect={detail.open} quickAdd={detail.quickAdd} hideStall />
                   ))}
                 </div>
               </div>

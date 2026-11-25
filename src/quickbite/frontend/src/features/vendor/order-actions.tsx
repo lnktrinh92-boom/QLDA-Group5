@@ -55,7 +55,9 @@ export function OrderActions({
   if (nextStatuses.length === 0 && !awaitingPayment) return null;
 
   const forward = nextStatuses.filter((s) => !NEEDS_REASON.includes(s));
-  const negative = nextStatuses.filter((s) => NEEDS_REASON.includes(s));
+  // Đơn chờ xác nhận chỉ cần "Từ chối", không hiện thêm "Huỷ đơn" trùng nghĩa (Design QA UI-02, VN-02).
+  // "Huỷ đơn" chỉ hiện sau khi quầy đã nhận đơn.
+  const negative = nextStatuses.filter((s) => NEEDS_REASON.includes(s) && !(s === 'CANCELLED' && nextStatuses.includes('REJECTED')));
   const busy = update.isPending || confirmPayment.isPending;
   // Đơn đã chuyển khoản: bước cuối chỉ là giao món, không thu tiền nữa
   const labelOf = (status: OrderStatus) => (status === 'COMPLETED' && payment?.method === 'VIETQR' ? 'Đã giao món' : ACTION_LABELS[status]);

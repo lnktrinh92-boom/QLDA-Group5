@@ -14,6 +14,7 @@ import { SectionHeader } from '@/features/food-discovery/SectionHeader';
 import { useFoodDetailDialog } from '@/features/food-discovery/FoodDetailDialog';
 import { categoryIcon } from '@/features/food-discovery/category-icons';
 import type { HomeData } from '@/types/models';
+import { hungryTitle } from '@/lib/hungry-title';
 import { cn } from '@/lib/utils';
 
 const HERO_IMAGES = [
@@ -65,7 +66,7 @@ export function HomePage() {
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 xl:grid-cols-4">
                   {data.popularItems.map((item) => (
-                    <FoodCard key={item.id} item={item} onSelect={detail.open} />
+                    <FoodCard key={item.id} item={item} onSelect={detail.open} quickAdd={detail.quickAdd} />
                   ))}
                 </div>
               )}
@@ -76,7 +77,7 @@ export function HomePage() {
                 <SectionHeader id="featured-heading" title="Gợi ý hôm nay" subtitle="Món đặc trưng do các quầy đề xuất" />
                 <div className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 xl:grid-cols-4">
                   {data.featuredItems.slice(0, 4).map((item) => (
-                    <FoodCard key={item.id} item={item} onSelect={detail.open} />
+                    <FoodCard key={item.id} item={item} onSelect={detail.open} quickAdd={detail.quickAdd} />
                   ))}
                 </div>
               </section>
@@ -210,7 +211,7 @@ function HowItWorks() {
               <span className="flex size-11 items-center justify-center rounded-xl bg-navy-900 text-white">
                 <Icon className="size-5" aria-hidden />
               </span>
-              <span className="text-sm font-bold text-brand-500">Bước {i + 1}</span>
+              <span className="text-sm font-bold text-brand-600">Bước {i + 1}</span>
             </div>
             <h3 className="mt-4 text-lg font-bold">{title}</h3>
             <p className="mt-1 text-navy-500">{text}</p>
@@ -228,7 +229,7 @@ function CallToAction() {
       <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 px-4 py-12 sm:px-6 md:flex-row md:items-center">
         <div>
           <h2 className="text-2xl font-extrabold text-white sm:text-3xl">
-            {user ? `Đói rồi phải không, ${user.fullName.split(' ').pop()}?` : 'Sẵn sàng cho bữa trưa nhanh gọn?'}
+            {user ? hungryTitle(user) : 'Sẵn sàng cho bữa trưa nhanh gọn?'}
           </h2>
           <p className="mt-2 text-navy-200">
             {user ? 'Hàng chục món ngon đang chờ bạn.' : 'Tạo tài khoản sinh viên miễn phí để bắt đầu đặt món.'}

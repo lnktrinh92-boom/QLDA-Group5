@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { Clock, MapPin } from 'lucide-react';
+import { ArrowRight, Clock, MapPin } from 'lucide-react';
 import { ImageWithFallback } from '@/components/ui/ImageWithFallback';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { StallSummary } from '@/types/models';
@@ -27,6 +27,10 @@ export function StallCard({ stall }: { stall: StallSummary }) {
             <Clock className="size-4 shrink-0" aria-hidden /> {stall.openTime} – {stall.closeTime}
           </span>
         </div>
+        {/* Lời gọi hành động ở chân thẻ cho biết thẻ bấm được (Design QA UI-04). Cả thẻ đã là một liên kết nên đây chỉ là chữ. */}
+        <span className="mt-3 flex items-center gap-1 border-t border-gray-100 pt-3 text-sm font-semibold text-brand-600" aria-hidden>
+          Xem thực đơn <ArrowRight className="size-4 transition group-hover:translate-x-0.5" />
+        </span>
       </div>
     </Link>
   );

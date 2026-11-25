@@ -15,7 +15,8 @@
   --color-brand-300: #ffa283;
   --color-brand-400: #fd7a54;
   --color-brand-500: #f9603b;
-  --color-brand-600: #e6461f;
+  /* Chữ cam cỡ nhỏ dùng brand-600: tương phản 5,2:1 trên nền trắng, 4,8:1 trên brand-50 (đạt WCAG AA, rà soát ACC-01) */
+  --color-brand-600: #c73b17;
   --color-brand-700: #bf3515;
   --color-brand-800: #982e17;
   --color-brand-900: #7b2917;
